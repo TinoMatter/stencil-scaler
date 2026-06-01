@@ -1,0 +1,1739 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stoma-Schablonen Skalierer</title>
+  <style>
+    :root {
+      --bg-1: #f3f8fb;
+      --bg-2: #edf4ea;
+      --card: #ffffff;
+      --ink: #132025;
+      --muted: #506169;
+      --line: #d5e0e7;
+      --accent: #176f9a;
+      --accent-2: #e1ad52;
+      --danger-bg: #fff8ec;
+      --danger-line: #f1ba59;
+      --alarm-line: #dc2626;
+      --alarm-bg: #fef2f2;
+      --shadow: 0 18px 44px rgba(19, 32, 37, 0.09);
+      --radius-lg: 18px;
+      --radius-md: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 12%, rgba(23, 111, 154, 0.18), transparent 32%),
+        radial-gradient(circle at 88% 75%, rgba(225, 173, 82, 0.17), transparent 36%),
+        linear-gradient(145deg, var(--bg-1), var(--bg-2));
+    }
+
+    .container {
+      width: min(1240px, 95vw);
+      margin: 24px auto 34px;
+      display: grid;
+      grid-template-columns: minmax(330px, 400px) minmax(460px, 1fr);
+      gap: 18px;
+    }
+
+    .panel {
+      background: color-mix(in srgb, var(--card) 94%, #f6fbff 6%);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      padding: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(1.35rem, 2vw, 1.9rem);
+      letter-spacing: 0.01em;
+    }
+
+    .subtitle {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+      line-height: 1.45;
+    }
+
+    .section {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--line);
+    }
+
+    .section h2 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+    }
+
+    .steps ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #274033;
+      font-size: 0.9rem;
+      line-height: 1.5;
+    }
+
+    .steps li + li {
+      margin-top: 6px;
+    }
+
+    .hint {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    input[type="file"] {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid var(--line);
+      background: #fbfdfb;
+      border-radius: var(--radius-md);
+      color: #173223;
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+      font-size: 0.84rem;
+    }
+
+    .control-row {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+    }
+
+    button {
+      width: 100%;
+      border: none;
+      border-radius: var(--radius-md);
+      padding: 12px 14px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 0.14s ease, filter 0.14s ease, opacity 0.14s ease;
+      font-family: "Avenir Next", "Segoe UI", "Helvetica Neue", sans-serif;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+    }
+
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #176f9a, #135f84);
+      color: #fff;
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, #e1ad52, #cf9737);
+      color: #32240d;
+    }
+
+    .btn-ghost {
+      background: #edf5ef;
+      color: #1f3d2a;
+      border: 1px solid #cfe0d4;
+    }
+
+    .manual-note {
+      margin-top: 8px;
+      font-size: 0.84rem;
+      color: #30523e;
+      background: #f2faf4;
+      border: 1px solid #d8ecde;
+      border-radius: 10px;
+      padding: 8px 10px;
+    }
+
+    .status {
+      margin-top: 10px;
+      min-height: 44px;
+      border-radius: 10px;
+      border: 1px solid #dbe6dc;
+      padding: 10px 12px;
+      background: #f9fcfa;
+      font-size: 0.9rem;
+      color: #23422f;
+      line-height: 1.35;
+    }
+
+    .status.error {
+      border-color: #e8b0a8;
+      background: #fff4f3;
+      color: #81211a;
+    }
+
+    .alarm-box {
+      margin-top: 10px;
+      border: 1px solid var(--alarm-line);
+      border-left: 6px solid var(--alarm-line);
+      background: var(--alarm-bg);
+      color: #7f1d1d;
+      border-radius: 10px;
+      padding: 10px 12px;
+      font-size: 0.9rem;
+      line-height: 1.4;
+      font-weight: 700;
+    }
+
+    .busy-indicator {
+      margin-top: 10px;
+      border: 1px solid #cfdde7;
+      border-radius: 10px;
+      background: #f3f8fc;
+      padding: 10px;
+      display: none;
+    }
+
+    .busy-label {
+      color: #1f4f66;
+      font-size: 0.84rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .busy-track {
+      width: 100%;
+      height: 8px;
+      border-radius: 99px;
+      background: #d9e6ef;
+      overflow: hidden;
+    }
+
+    .busy-bar {
+      width: 36%;
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(90deg, #176f9a, #2f87af);
+      animation: busy-slide 1.1s ease-in-out infinite;
+    }
+
+    @keyframes busy-slide {
+      0% {
+        transform: translateX(-110%);
+      }
+      100% {
+        transform: translateX(280%);
+      }
+    }
+
+    .metrics {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 7px;
+      font-size: 0.85rem;
+    }
+
+    .metric {
+      padding: 9px 10px;
+      background: #f7fbf8;
+      border: 1px solid #e2ece4;
+      border-radius: 10px;
+      color: #1e3327;
+    }
+
+    .details-block {
+      border: 1px solid #d8e4eb;
+      border-radius: 12px;
+      padding: 8px 10px 12px;
+      background: #f9fcff;
+    }
+
+    .details-block summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #214255;
+      user-select: none;
+      outline: none;
+      margin-bottom: 8px;
+    }
+
+    .batch-details {
+      border: 1px solid #d8e4db;
+      border-radius: 12px;
+      padding: 8px 10px 12px;
+      background: #f8fcf9;
+    }
+
+    .batch-details summary {
+      cursor: pointer;
+      font-weight: 700;
+      color: #244032;
+      user-select: none;
+      outline: none;
+      margin-bottom: 8px;
+    }
+
+    .batch-log {
+      margin-top: 10px;
+      max-height: 190px;
+      overflow: auto;
+      border: 1px solid #d9e7dc;
+      border-radius: 10px;
+      background: #fbfefc;
+      padding: 8px;
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: #244032;
+    }
+
+    .batch-item {
+      padding: 7px 8px;
+      border-radius: 8px;
+      margin-bottom: 6px;
+      border: 1px solid #e3efe5;
+      background: #f8fcf9;
+      word-break: break-word;
+    }
+
+    .batch-item.ok {
+      border-color: #b8e3c4;
+      background: #effaf2;
+    }
+
+    .batch-item.error {
+      border-color: #efc3bc;
+      background: #fff4f3;
+      color: #7a2019;
+    }
+
+    .warning {
+      margin-top: 6px;
+      border: 1px solid var(--danger-line);
+      border-left: 6px solid var(--danger-line);
+      background: var(--danger-bg);
+      color: #5e4317;
+      padding: 12px 14px;
+      border-radius: 10px;
+      font-weight: 700;
+      line-height: 1.4;
+    }
+
+    .preview-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      min-height: 640px;
+    }
+
+    .preview-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+      flex-wrap: wrap;
+    }
+
+    .preview-head p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .legend-line {
+      display: inline-block;
+      width: 26px;
+      height: 3px;
+      background: #00a651;
+      vertical-align: middle;
+      margin-right: 8px;
+      border-radius: 10px;
+    }
+
+    .canvas-shell {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #ffffff;
+      padding: 8px;
+      flex: 1;
+      min-height: 460px;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+    }
+
+    canvas {
+      max-width: 100%;
+      height: auto;
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(15, 122, 78, 0.14);
+      cursor: default;
+    }
+
+    .batch-panel {
+      grid-column: 1 / -1;
+    }
+
+    @media (max-width: 1020px) {
+      .container {
+        grid-template-columns: 1fr;
+      }
+
+      .preview-wrap {
+        min-height: 520px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <section class="panel">
+      <h1>Stoma-Schablonen Skalierer</h1>
+      <p class="subtitle">Vorlage laden, Linie prüfen, Ausgabe erstellen und drucken.</p>
+
+      <div class="section steps">
+        <h2>So gehst du vor</h2>
+        <ol>
+          <li>Datei laden: JPG, PNG oder PDF. Bei PDF wird immer Seite 1 genutzt.</li>
+          <li>Auto-Erkennung startet direkt. Prüfe die Vorschlagslinie auf dem Lineal.</li>
+          <li>Bei Bedarf: Vorschlagslinie per Drag-and-Drop feinjustieren oder manuell 0 cm / 12 cm setzen.</li>
+          <li>Unter Ausgabe herunterladen oder direkt drucken.</li>
+        </ol>
+      </div>
+
+      <div class="section">
+        <h2>1) Datei importieren</h2>
+        <input id="dateiInput" type="file" accept=".jpg,.jpeg,.png,.pdf,application/pdf,image/jpeg,image/png" />
+        <p class="hint">Erlaubte Formate: JPG, PNG, PDF (Seite 1).</p>
+      </div>
+
+      <div class="section">
+        <h2>2) Erkennung</h2>
+        <div class="control-row">
+          <button id="erkennenBtn" class="btn-primary" disabled>Erkennung erneut starten</button>
+          <button id="manuellBtn" class="btn-ghost" disabled>Manuell 0 cm und 12 cm setzen</button>
+        </div>
+
+        <div id="manualNote" class="manual-note" style="display:none;">Manuell aktiv: erst 0 cm, dann 12 cm im Bild klicken.</div>
+
+        <div id="statusBox" class="status">Status: Bitte Datei laden.</div>
+        <div id="autoAlarm" class="alarm-box" style="display:none;"></div>
+        <div id="busyIndicator" class="busy-indicator">
+          <div class="busy-label">In Bearbeitung ...</div>
+          <div class="busy-track"><div class="busy-bar"></div></div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>3) Ausgabe</h2>
+        <div class="control-row">
+          <button id="downloadBtn" class="btn-secondary" disabled>A4-PDF herunterladen</button>
+          <button id="printBtn" class="btn-secondary" disabled>A4-PDF direkt drucken</button>
+        </div>
+        <div class="warning">Beim Drucken zwingend "Tatsächliche Größe" oder "Maßstab 100%" wählen.</div>
+      </div>
+
+      <div class="section">
+        <details id="detailsMetrics" class="details-block">
+          <summary>Details</summary>
+        <div class="metrics">
+          <div class="metric" id="methodeWert">Methode: -</div>
+          <div class="metric" id="winkelWert">Korrekturwinkel: -</div>
+          <div class="metric" id="distanzWert">0-12 cm Distanz (px): -</div>
+          <div class="metric" id="auflWert">Berechnete Auflösung: -</div>
+          <div class="metric" id="groesseWert">Bildgröße bei 1:1: -</div>
+        </div>
+        </details>
+      </div>
+    </section>
+
+    <section class="panel preview-wrap">
+      <div class="preview-head">
+        <h2>Vorschau</h2>
+        <p><span class="legend-line"></span>Grün: sicher erkannt, Orange: Vorschlag unsicher</p>
+      </div>
+
+      <div class="canvas-shell">
+        <canvas id="previewCanvas" width="900" height="1200"></canvas>
+      </div>
+      <div class="hint">Feinjustierung: Endstriche oder Linie ziehen.</div>
+    </section>
+
+    <section class="panel batch-panel">
+      <details id="batchDetails" class="batch-details">
+        <summary>4) Batch-Modus</summary>
+        <input id="batchInput" type="file" multiple accept=".jpg,.jpeg,.png,.pdf,application/pdf,image/jpeg,image/png" />
+        <div class="control-row">
+          <button id="batchBtn" class="btn-primary" disabled>Batch verarbeiten und PDFs laden</button>
+        </div>
+        <div id="batchLog" class="batch-log">Noch keine Batch-Verarbeitung gestartet.</div>
+      </details>
+    </section>
+  </main>
+
+  <script src="./vendor/pdf.min.js"></script>
+  <script src="./vendor/pdf-lib.min.js"></script>
+  <script async src="./vendor/opencv.js"></script>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
+
+    const MM_TO_PT = 72 / 25.4;
+    const A4_BREITE_MM = 210;
+    const A4_HOEHE_MM = 297;
+
+    const dateiInput = document.getElementById("dateiInput");
+    const batchInput = document.getElementById("batchInput");
+    const erkennenBtn = document.getElementById("erkennenBtn");
+    const manuellBtn = document.getElementById("manuellBtn");
+    const downloadBtn = document.getElementById("downloadBtn");
+    const printBtn = document.getElementById("printBtn");
+    const batchBtn = document.getElementById("batchBtn");
+    const previewCanvas = document.getElementById("previewCanvas");
+    const previewCtx = previewCanvas.getContext("2d");
+    const statusBox = document.getElementById("statusBox");
+    const autoAlarm = document.getElementById("autoAlarm");
+    const busyIndicator = document.getElementById("busyIndicator");
+    const manualNote = document.getElementById("manualNote");
+    const batchLog = document.getElementById("batchLog");
+
+    const methodeWert = document.getElementById("methodeWert");
+    const winkelWert = document.getElementById("winkelWert");
+    const distanzWert = document.getElementById("distanzWert");
+    const auflWert = document.getElementById("auflWert");
+    const groesseWert = document.getElementById("groesseWert");
+
+    const appState = {
+      cvBereit: false,
+      sourceName: "",
+      sourceCanvas: null,
+      sourceMeta: null,
+      processedCanvas: null,
+      calibration: null,
+      manuellAktiv: false,
+      manuellePunkte: [],
+      drag: { active: false, mode: null, last: null },
+      alarmAktiv: false,
+    };
+
+    const cvReadyPromise = waitForOpenCv();
+    cvReadyPromise.then(() => {
+      appState.cvBereit = true;
+      setStatus("OpenCV.js ist geladen. Datei kann verarbeitet werden.");
+      if (appState.sourceCanvas && !appState.calibration) {
+        starteAutoErkennung();
+      }
+    }).catch((err) => {
+      setStatus("OpenCV.js konnte nicht geladen werden: " + err.message, true);
+    });
+
+    dateiInput.addEventListener("change", async (event) => {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      try {
+        resetStateForNewFile();
+        setStatus("Datei wird geladen ...");
+
+        appState.sourceName = file.name;
+        const quelle = await ladeDateiAlsQuelle(file);
+        appState.sourceCanvas = quelle.canvas;
+        appState.sourceMeta = quelle.sourceMeta;
+
+        zeichneCanvasGrundbild(appState.sourceCanvas);
+        setStatus(appState.sourceMeta.isPdf
+          ? "Datei geladen (PDF Seite 1). Auto-Erkennung startet ..."
+          : "Datei geladen. Auto-Erkennung startet ...");
+
+        erkennenBtn.disabled = false;
+        manuellBtn.disabled = false;
+
+        if (appState.cvBereit) {
+          await starteAutoErkennung();
+        }
+      } catch (err) {
+        setStatus("Fehler beim Laden: " + err.message, true);
+      }
+    });
+
+    erkennenBtn.addEventListener("click", async () => {
+      await starteAutoErkennung();
+    });
+
+    manuellBtn.addEventListener("click", () => {
+      if (!appState.processedCanvas) {
+        setStatus("Bitte zuerst eine Datei laden und die Auto-Erkennung starten.", true);
+        return;
+      }
+      appState.manuellAktiv = true;
+      appState.manuellePunkte = [];
+      manualNote.style.display = "block";
+      setStatus("Manuell aktiv: zuerst 0 cm, dann 12 cm klicken.");
+    });
+
+    previewCanvas.addEventListener("mousedown", (event) => {
+      if (!appState.calibration || appState.manuellAktiv) return;
+      const p = canvasKoordinateAusKlick(event, previewCanvas);
+      if (!p) return;
+
+      const mode = ermittleHoverModus(p);
+      if (mode !== "none") {
+        appState.drag = { active: true, mode, last: p };
+        previewCanvas.style.cursor = "grabbing";
+      }
+    });
+
+    previewCanvas.addEventListener("mousemove", (event) => {
+      const p = canvasKoordinateAusKlick(event, previewCanvas);
+      if (!p) return;
+
+      if (!appState.calibration || appState.manuellAktiv) {
+        previewCanvas.style.cursor = appState.manuellAktiv ? "crosshair" : "default";
+        return;
+      }
+
+      if (!appState.drag.active) {
+        const hover = ermittleHoverModus(p);
+        if (hover === "p0" || hover === "p12") {
+          previewCanvas.style.cursor = "pointer";
+        } else if (hover === "line") {
+          previewCanvas.style.cursor = "grab";
+        } else {
+          previewCanvas.style.cursor = "default";
+        }
+        return;
+      }
+
+      const dx = p.x - appState.drag.last.x;
+      const dy = p.y - appState.drag.last.y;
+
+      if (appState.drag.mode === "p0") {
+        appState.calibration.p0.x += dx;
+        appState.calibration.p0.y += dy;
+      } else if (appState.drag.mode === "p12") {
+        appState.calibration.p12.x += dx;
+        appState.calibration.p12.y += dy;
+      } else if (appState.drag.mode === "line") {
+        appState.calibration.p0.x += dx;
+        appState.calibration.p0.y += dy;
+        appState.calibration.p12.x += dx;
+        appState.calibration.p12.y += dy;
+      }
+
+      appState.drag.last = p;
+      aktualisiereKalibrierungAusLinie("Feinjustiert (Drag)", true, true);
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (appState.drag.active) {
+        appState.drag = { active: false, mode: null, last: null };
+        previewCanvas.style.cursor = "default";
+      }
+    });
+
+    previewCanvas.addEventListener("mouseleave", () => {
+      if (!appState.drag.active) {
+        previewCanvas.style.cursor = appState.manuellAktiv ? "crosshair" : "default";
+      }
+    });
+
+    previewCanvas.addEventListener("click", (event) => {
+      if (!appState.manuellAktiv || !appState.processedCanvas) return;
+      const p = canvasKoordinateAusKlick(event, previewCanvas);
+      if (!p) return;
+
+      appState.manuellePunkte.push(p);
+      if (appState.manuellePunkte.length === 1) {
+        setStatus("Punkt für 0 cm gesetzt. Jetzt Punkt für 12 cm klicken.");
+        zeichneAktuelleVorschau();
+        return;
+      }
+
+      const [p0, p12] = appState.manuellePunkte;
+      appState.calibration = {
+        method: "Manuell gesetzt (0/12 cm Klick)",
+        p0,
+        p12,
+        lineSicher: true,
+        showRulerLine: true,
+        overlayColor: "#0ea55f",
+        forceLineScale: true,
+        angleDeg: appState.calibration ? appState.calibration.angleDeg : 0,
+      };
+
+      appState.manuellAktiv = false;
+      appState.manuellePunkte = [];
+      manualNote.style.display = "none";
+      aktualisiereKalibrierungAusLinie(appState.calibration.method, true, true);
+      setAutoAlarm(false);
+      setStatus("Manuelle Kalibrierung übernommen. Ausgabe ist bereit.");
+    });
+
+    printBtn.addEventListener("click", async () => {
+      if (!appState.calibration || !appState.processedCanvas) {
+        setStatus("Bitte zuerst Erkennung durchführen.", true);
+        return;
+      }
+
+      try {
+        printBtn.disabled = true;
+        setStatus("Druckansicht wird vorbereitet ...");
+        await druckeCanvasDirekt(appState.calibration, appState.processedCanvas);
+      } catch (err) {
+        setStatus("Fehler beim Drucken: " + err.message, true);
+      } finally {
+        printBtn.disabled = false;
+      }
+    });
+
+    downloadBtn.addEventListener("click", async () => {
+      if (!appState.calibration || !appState.processedCanvas) {
+        setStatus("Bitte zuerst Erkennung durchführen.", true);
+        return;
+      }
+
+      try {
+        downloadBtn.disabled = true;
+        setStatus("A4-PDF wird erstellt ...");
+        const blob = await erzeugeA4Pdf(appState.calibration, appState.processedCanvas);
+        await ladeBlobHerunter(blob, dateinameOhneEndung(appState.sourceName) + "_a4_1zu1.pdf");
+        setStatus("PDF erfolgreich erstellt.");
+      } catch (err) {
+        setStatus("Fehler bei PDF-Erstellung: " + err.message, true);
+      } finally {
+        downloadBtn.disabled = false;
+      }
+    });
+
+    batchInput.addEventListener("change", () => {
+      const files = batchInput.files ? batchInput.files.length : 0;
+      batchBtn.disabled = !appState.cvBereit || files === 0;
+    });
+
+    batchBtn.addEventListener("click", async () => {
+      const files = Array.from(batchInput.files || []);
+      if (!files.length) {
+        setStatus("Bitte Batch-Dateien auswählen.", true);
+        return;
+      }
+
+      setBusy(true, "Batch wird verarbeitet ...");
+      setBatchLogStart(files.length);
+      batchBtn.disabled = true;
+      let ok = 0;
+
+      for (let i = 0; i < files.length; i += 1) {
+        try {
+          const quelle = await ladeDateiAlsQuelle(files[i]);
+          const result = await autoDetectFromSource(quelle.canvas, quelle.sourceMeta);
+          const cal = berechneKalibrierungAusLinie(result, result.outputCanvas);
+          const blob = await erzeugeA4Pdf(cal, result.outputCanvas);
+          await ladeBlobHerunter(blob, dateinameOhneEndung(files[i].name) + "_a4_1zu1.pdf");
+          schreibeBatchLog(files[i].name + " : OK (" + result.method + ")", "ok");
+          ok += 1;
+        } catch (err) {
+          schreibeBatchLog(files[i].name + " : FEHLER - " + err.message, "error");
+        }
+      }
+
+      setStatus(`Batch fertig: ${ok}/${files.length} erfolgreich.`);
+      batchBtn.disabled = false;
+      setBusy(false);
+    });
+
+    async function starteAutoErkennung() {
+      if (!appState.sourceCanvas) {
+        setStatus("Bitte zuerst eine Datei laden.", true);
+        return;
+      }
+
+      try {
+        setBusy(true, "Erkennung läuft ...");
+        setStatus("Auto-Erkennung läuft ...");
+        const result = await autoDetectFromSource(appState.sourceCanvas, appState.sourceMeta);
+
+        appState.processedCanvas = result.outputCanvas;
+        appState.calibration = {
+          method: result.method,
+          p0: result.p0,
+          p12: result.p12,
+          lineSicher: result.lineSicher,
+          showRulerLine: true,
+          overlayColor: result.lineSicher ? "#00a651" : "#d97706",
+          forceLineScale: result.lineSicher,
+          angleDeg: result.angleDeg,
+        };
+
+        aktualisiereKalibrierungAusLinie(result.method, result.lineSicher, true);
+
+        if (!result.lineSicher) {
+          setAutoAlarm(true, "ALARM: Automatische Erkennung unsicher. Vorschlagslinie prüfen, dann per Drag-and-Drop oder manuell korrigieren.");
+          setStatus("Automatik unsicher: Bitte Vorschlagslinie prüfen.");
+        } else {
+          setAutoAlarm(false);
+          if (appState.calibration.imageBreiteMm > A4_BREITE_MM || appState.calibration.imageHoeheMm > A4_HOEHE_MM) {
+            setStatus("Verarbeitung abgeschlossen. Hinweis: Inhalt ist bei 1:1 größer als A4 und kann beschnitten werden.");
+          } else {
+            setStatus("Verarbeitung abgeschlossen. PDF kann heruntergeladen werden.");
+          }
+        }
+
+        downloadBtn.disabled = false;
+        printBtn.disabled = false;
+      } catch (err) {
+        setStatus("Erkennung fehlgeschlagen: " + err.message, true);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function autoDetectFromSource(sourceCanvas, sourceMeta) {
+      await cvReadyPromise;
+      const src = cv.imread(sourceCanvas);
+      let mat = null;
+
+      try {
+        const deskew = entzerren(src);
+        mat = deskew.mat;
+
+        const expected = erwarteteDistanzAusMeta(sourceMeta, sourceCanvas.width, sourceCanvas.height);
+        const ruler = findeRuler(mat, expected);
+
+        if (!ruler) {
+          throw new Error("Kein brauchbares Lineal erkannt.");
+        }
+
+        const outputCanvas = document.createElement("canvas");
+        outputCanvas.width = mat.cols;
+        outputCanvas.height = mat.rows;
+        cv.imshow(outputCanvas, mat);
+
+        return {
+          outputCanvas,
+          angleDeg: deskew.angle,
+          p0: ruler.p0,
+          p12: ruler.p12,
+          method: ruler.method,
+          lineSicher: ruler.reliable,
+        };
+      } finally {
+        src.delete();
+        if (mat) mat.delete();
+      }
+    }
+
+    function erwarteteDistanzAusMeta(meta, w, h) {
+      if (!meta || !meta.isPdf || !meta.pageWidthPt || !meta.pageHeightPt) return null;
+      const pageWmm = meta.pageWidthPt / MM_TO_PT;
+      const pageHmm = meta.pageHeightPt / MM_TO_PT;
+      if (pageWmm <= 0 || pageHmm <= 0) return null;
+      const pxPerMmX = w / pageWmm;
+      const pxPerMmY = h / pageHmm;
+      const span120 = 120 * ((pxPerMmX + pxPerMmY) / 2);
+      return {
+        horizontalPx: span120,
+        verticalPx: span120,
+      };
+    }
+
+    function findeRuler(srcMat, expected) {
+      const gray = new cv.Mat();
+      const edges = new cv.Mat();
+
+      try {
+        cv.cvtColor(srcMat, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(3, 3), 0);
+        cv.Canny(gray, edges, 40, 140, 3, false);
+
+        const tickCloud = findeTickCloud(edges, srcMat.cols, srcMat.rows, expected);
+        if (tickCloud) {
+          return tickCloud;
+        }
+
+        const fallback = findeLaengsteRulerLinie(edges, srcMat.cols, srcMat.rows, expected);
+        if (fallback) {
+          return fallback;
+        }
+
+        return null;
+      } finally {
+        gray.delete();
+        edges.delete();
+      }
+    }
+
+    function findeTickCloud(edges, cols, rows, expected) {
+      const lines = new cv.Mat();
+      try {
+        cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 10, 4, 2);
+
+        const vert = [];
+        const horiz = [];
+
+        for (let i = 0; i < lines.rows; i += 1) {
+          const x1 = lines.data32S[i * 4 + 0];
+          const y1 = lines.data32S[i * 4 + 1];
+          const x2 = lines.data32S[i * 4 + 2];
+          const y2 = lines.data32S[i * 4 + 3];
+
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const len = Math.hypot(dx, dy);
+          if (len < 3 || len > Math.max(cols, rows) * 0.08) continue;
+
+          let deg = Math.abs(Math.atan2(dy, dx) * 180 / Math.PI);
+          if (deg > 90) deg = 180 - deg;
+
+          if (Math.abs(90 - deg) <= 18) {
+            vert.push({ x: (x1 + x2) / 2, y: (y1 + y2) / 2, len });
+          } else if (deg <= 18) {
+            horiz.push({ x: (x1 + x2) / 2, y: (y1 + y2) / 2, len });
+          }
+        }
+
+        const candH = kandidatAusTicks(vert, "horizontal", cols, rows, expected && expected.horizontalPx);
+        const candV = kandidatAusTicks(horiz, "vertikal", cols, rows, expected && expected.verticalPx);
+
+        const candidates = [candH, candV].filter(Boolean);
+        if (!candidates.length) return null;
+        candidates.sort((a, b) => b.score - a.score);
+        return candidates[0];
+      } finally {
+        lines.delete();
+      }
+    }
+
+    function kandidatAusTicks(ticks, orientierung, cols, rows, expectedSpan) {
+      if (!ticks || ticks.length < 30) return null;
+
+      const bandSize = Math.max(8, Math.round((orientierung === "horizontal" ? rows : cols) * 0.01));
+      const axisLimit = orientierung === "horizontal" ? rows : cols;
+      const edgeBand = axisLimit * 0.22;
+      const histogram = new Map();
+
+      for (const t of ticks) {
+        const axis = orientierung === "horizontal" ? t.y : t.x;
+        const b = Math.floor(axis / bandSize);
+        histogram.set(b, (histogram.get(b) || 0) + 1);
+      }
+
+      const bestBins = [...histogram.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
+      let best = null;
+
+      for (const [b, count] of bestBins) {
+        const center = b * bandSize + bandSize / 2;
+        const inEdgeZone = center <= edgeBand || center >= (axisLimit - edgeBand);
+        if (!inEdgeZone) {
+          continue;
+        }
+
+        const bandHalf = Math.max(12, Math.round((orientierung === "horizontal" ? rows : cols) * 0.018));
+        const group = ticks.filter((t) => Math.abs((orientierung === "horizontal" ? t.y : t.x) - center) <= bandHalf);
+        if (group.length < 45) continue;
+
+        const pos = group.map((t) => orientierung === "horizontal" ? t.x : t.y).sort((a, b2) => a - b2);
+        const start = quantile(pos, 0.03);
+        const end = quantile(pos, 0.97);
+        const span = end - start;
+        if (span < Math.min(cols, rows) * 0.1) continue;
+
+        const diffs = [];
+        for (let i = 1; i < pos.length; i += 1) {
+          const d = pos[i] - pos[i - 1];
+          if (d > 0.6) diffs.push(d);
+        }
+
+        const stepMed = diffs.length ? median(diffs) : 0;
+        let regular = 0;
+        if (stepMed > 0) {
+          for (const d of diffs) {
+            if (Math.abs(d - stepMed) <= Math.max(0.4, stepMed * 0.45)) regular += 1;
+          }
+          regular = regular / Math.max(diffs.length, 1);
+        }
+
+        let expectedStepBonus = 0;
+        let expectedStepPlausibel = true;
+        if (expectedSpan) {
+          if (stepMed <= 0) {
+            expectedStepPlausibel = false;
+          } else {
+            const expectedStep = expectedSpan / 120;
+            const intervalCount = span / stepMed;
+            const stepErr = Math.abs(stepMed - expectedStep) / Math.max(expectedStep, 1e-6);
+            expectedStepBonus = Math.max(0, 1 - stepErr) * 120;
+            if (intervalCount < 70 || intervalCount > 180) {
+              expectedStepPlausibel = false;
+            }
+            if (stepMed < expectedStep * 0.45 || stepMed > expectedStep * 1.9) {
+              expectedStepPlausibel = false;
+            }
+          }
+        }
+        if (expectedSpan && !expectedStepPlausibel) {
+          continue;
+        }
+
+        const edgeDist = Math.min(center, axisLimit - center);
+        const edgeBias = 1 - edgeDist / Math.max(1, axisLimit / 2);
+
+        const density = group.length / Math.max(1, span);
+        const densityBonus = Math.min(65, density * 180);
+
+        let expectedBonus = 0;
+        let spanErr = 1;
+        if (expectedSpan) {
+          spanErr = Math.abs(span - expectedSpan) / Math.max(expectedSpan, 1);
+          if (spanErr > 0.12) {
+            continue;
+          }
+          expectedBonus = Math.max(0, 1 - spanErr) * 80;
+        }
+
+        const score =
+          group.length * 1.35 +
+          span * 0.02 +
+          regular * 55 +
+          expectedBonus * 2.2 +
+          expectedStepBonus +
+          densityBonus +
+          edgeBias * 140 +
+          count;
+        const reliable =
+          group.length >= 65 &&
+          regular >= 0.24 &&
+          edgeBias >= 0.45 &&
+          (!expectedSpan || spanErr <= 0.12);
+
+        const p0 = orientierung === "horizontal"
+          ? { x: start, y: center }
+          : { x: center, y: start };
+        const p12 = orientierung === "horizontal"
+          ? { x: end, y: center }
+          : { x: center, y: end };
+
+        const candidate = {
+          p0,
+          p12,
+          method: "Tick-Cluster " + orientierung,
+          reliable,
+          score,
+        };
+
+        if (!best || candidate.score > best.score) best = candidate;
+      }
+
+      return best;
+    }
+
+    function findeLaengsteRulerLinie(edges, cols, rows, expected) {
+      const lines = new cv.Mat();
+      try {
+        cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 70, Math.max(cols, rows) * 0.2, 20);
+
+        let best = null;
+        let bestScore = -Infinity;
+        for (let i = 0; i < lines.rows; i += 1) {
+          const x1 = lines.data32S[i * 4 + 0];
+          const y1 = lines.data32S[i * 4 + 1];
+          const x2 = lines.data32S[i * 4 + 2];
+          const y2 = lines.data32S[i * 4 + 3];
+          const len = Math.hypot(x2 - x1, y2 - y1);
+          if (len < Math.min(cols, rows) * 0.16) {
+            continue;
+          }
+
+          const dx = x2 - x1;
+          const dy = y2 - y1;
+          const orientHorizontal = Math.abs(dx) >= Math.abs(dy);
+          const expectedSpan = expected ? (orientHorizontal ? expected.horizontalPx : expected.verticalPx) : null;
+
+          let spanErr = 0;
+          if (expectedSpan) {
+            spanErr = Math.abs(len - expectedSpan) / Math.max(expectedSpan, 1);
+            if (spanErr > 0.16) {
+              continue;
+            }
+          }
+
+          const e1 = Math.min(x1, cols - x1, y1, rows - y1);
+          const e2 = Math.min(x2, cols - x2, y2, rows - y2);
+          const edgeDist = (e1 + e2) / 2;
+          const edgeNorm = edgeDist / Math.max(1, Math.min(cols, rows));
+
+          const score = len - edgeNorm * 420 - spanErr * 500;
+          if (score > bestScore) {
+            bestScore = score;
+            best = {
+              p0: { x: x1, y: y1 },
+              p12: { x: x2, y: y2 },
+              spanErr,
+              edgeNorm,
+            };
+          }
+        }
+
+        if (!best) return null;
+        const reliable = Boolean(expected) && best.spanErr <= 0.09;
+        return {
+          p0: best.p0,
+          p12: best.p12,
+          method: reliable ? "Linien-Fallback (Rand + Plausibel)" : "Linien-Fallback",
+          reliable,
+          score: bestScore,
+        };
+      } finally {
+        lines.delete();
+      }
+    }
+
+    function entzerren(src) {
+      const gray = new cv.Mat();
+      const edges = new cv.Mat();
+      const lines = new cv.Mat();
+
+      try {
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+        cv.Canny(gray, edges, 60, 170);
+        cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 90, src.cols * 0.25, 25);
+
+        const winkel = [];
+        for (let i = 0; i < lines.rows; i += 1) {
+          const x1 = lines.data32S[i * 4 + 0];
+          const y1 = lines.data32S[i * 4 + 1];
+          const x2 = lines.data32S[i * 4 + 2];
+          const y2 = lines.data32S[i * 4 + 3];
+          const len = Math.hypot(x2 - x1, y2 - y1);
+          if (len < src.cols * 0.2) continue;
+
+          let deg = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
+          if (deg > 90) deg -= 180;
+          if (deg < -90) deg += 180;
+          if (Math.abs(deg) <= 35) winkel.push(deg);
+        }
+
+        const medianWinkel = winkel.length ? median(winkel) : 0;
+        const rotated = rotiereMitRahmen(src, -medianWinkel);
+        return { mat: rotated, angle: -medianWinkel };
+      } finally {
+        gray.delete();
+        edges.delete();
+        lines.delete();
+      }
+    }
+
+    function rotiereMitRahmen(src, angleDeg) {
+      const rad = Math.abs(angleDeg * Math.PI / 180);
+      const sin = Math.sin(rad);
+      const cos = Math.cos(rad);
+      const newW = Math.ceil(src.rows * sin + src.cols * cos);
+      const newH = Math.ceil(src.rows * cos + src.cols * sin);
+
+      const center = new cv.Point(src.cols / 2, src.rows / 2);
+      const rotMat = cv.getRotationMatrix2D(center, angleDeg, 1);
+      rotMat.data64F[2] += newW / 2 - center.x;
+      rotMat.data64F[5] += newH / 2 - center.y;
+
+      const dst = new cv.Mat();
+      cv.warpAffine(src, dst, rotMat, new cv.Size(newW, newH), cv.INTER_CUBIC, cv.BORDER_CONSTANT, new cv.Scalar(255, 255, 255, 255));
+      rotMat.delete();
+      return dst;
+    }
+
+    async function ladeDateiAlsQuelle(file) {
+      if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+        return await pdfErsteSeiteZuCanvas(file);
+      }
+
+      if (file.type.startsWith("image/") || /\.(jpg|jpeg|png)$/i.test(file.name)) {
+        return {
+          canvas: await bildDateiZuCanvas(file),
+          sourceMeta: { isPdf: false, pageIndex: 1 }
+        };
+      }
+
+      throw new Error("Dateityp nicht unterstützt.");
+    }
+
+    async function bildDateiZuCanvas(file) {
+      const url = URL.createObjectURL(file);
+      try {
+        const img = await ladeBild(url);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0);
+        return canvas;
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    async function pdfErsteSeiteZuCanvas(file) {
+      const data = await file.arrayBuffer();
+      const doc = await pdfjsLib.getDocument({ data }).promise;
+      const page = await doc.getPage(1);
+
+      const scale = 3.0;
+      const viewport = page.getViewport({ scale });
+      const view = page.view || [0, 0, viewport.width / scale, viewport.height / scale];
+      const pageWidthPt = Math.abs((view[2] || 0) - (view[0] || 0));
+      const pageHeightPt = Math.abs((view[3] || 0) - (view[1] || 0));
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+
+      return {
+        canvas,
+        sourceMeta: {
+          isPdf: true,
+          pageIndex: 1,
+          pageWidthPt,
+          pageHeightPt,
+          renderScale: scale,
+        }
+      };
+    }
+
+    function aktualisiereKalibrierungAusLinie(methodName, lineSicher, forceLineScale) {
+      if (!appState.calibration || !appState.processedCanvas) return;
+
+      const p0 = appState.calibration.p0;
+      const p12 = appState.calibration.p12;
+      const pixelDist = distanz(p0, p12);
+      if (!Number.isFinite(pixelDist) || pixelDist < 10) {
+        setStatus("Kalibrierlinie zu kurz. Bitte korrigieren.", true);
+        return;
+      }
+
+      let pointsPerPixel;
+      if (forceLineScale || !appState.sourceMeta || !appState.sourceMeta.isPdf) {
+        pointsPerPixel = mmZuPt(120) / pixelDist;
+      } else {
+        pointsPerPixel = appState.sourceMeta.pageWidthPt / appState.processedCanvas.width;
+      }
+
+      const pxProMm = 1 / (pointsPerPixel / MM_TO_PT);
+      const imageBreiteMm = appState.processedCanvas.width / pxProMm;
+      const imageHoeheMm = appState.processedCanvas.height / pxProMm;
+
+      appState.calibration = {
+        ...appState.calibration,
+        method: methodName,
+        lineSicher,
+        forceLineScale,
+        pixelDist,
+        pxProMm,
+        pointsPerPixel,
+        imageBreiteMm,
+        imageHoeheMm,
+      };
+
+      zeichneAktuelleVorschau();
+      updateMetrics();
+    }
+
+    async function erzeugeA4Pdf(cal, imageCanvas) {
+      const pdfDoc = await PDFLib.PDFDocument.create();
+      const page = pdfDoc.addPage([mmZuPt(A4_BREITE_MM), mmZuPt(A4_HOEHE_MM)]);
+      const druckCanvas = erstelleA4DruckCanvas(cal, imageCanvas);
+      const png = await canvasToBytes(druckCanvas);
+      const img = await pdfDoc.embedPng(png);
+
+      page.drawImage(img, {
+        x: 0,
+        y: 0,
+        width: mmZuPt(A4_BREITE_MM),
+        height: mmZuPt(A4_HOEHE_MM),
+      });
+      const bytes = await pdfDoc.save();
+      return new Blob([bytes], { type: "application/pdf" });
+    }
+
+    function berechneKalibrierungAusLinie(base, outputCanvas) {
+      const pixelDist = distanz(base.p0, base.p12);
+      if (!Number.isFinite(pixelDist) || pixelDist < 10) {
+        throw new Error("Kalibrierlinie ist zu kurz oder ungültig.");
+      }
+
+      const pointsPerPixel = mmZuPt(120) / pixelDist;
+      const pxProMm = 1 / (pointsPerPixel / MM_TO_PT);
+      const imageBreiteMm = outputCanvas.width / pxProMm;
+      const imageHoeheMm = outputCanvas.height / pxProMm;
+
+      return {
+        ...base,
+        pixelDist,
+        pointsPerPixel,
+        pxProMm,
+        imageBreiteMm,
+        imageHoeheMm,
+      };
+    }
+
+    function erstelleA4DruckCanvas(cal, imageCanvas) {
+      const normalized = normalisiereAusrichtungBild(cal, imageCanvas);
+      const quelle = normalized.canvas;
+
+      let pxProMm = Number(cal && cal.pxProMm);
+      if (!Number.isFinite(pxProMm) || pxProMm <= 0) {
+        const breiteMm = Number(cal && cal.imageBreiteMm);
+        if (Number.isFinite(breiteMm) && breiteMm > 0) {
+          pxProMm = quelle.width / breiteMm;
+        }
+      }
+      if (!Number.isFinite(pxProMm) || pxProMm <= 0) {
+        pxProMm = Math.max(quelle.width / A4_BREITE_MM, quelle.height / A4_HOEHE_MM);
+      }
+
+      const a4W = Math.max(1, Math.round(pxProMm * A4_BREITE_MM));
+      const a4H = Math.max(1, Math.round(pxProMm * A4_HOEHE_MM));
+      const out = document.createElement("canvas");
+      out.width = a4W;
+      out.height = a4H;
+
+      const ctx = out.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, out.width, out.height);
+
+      const x = Math.round((out.width - quelle.width) / 2);
+      const y = Math.round((out.height - quelle.height) / 2);
+      ctx.drawImage(quelle, x, y);
+      return out;
+    }
+
+    function normalisiereAusrichtungBild(cal, imageCanvas) {
+      if (!cal || !cal.p0 || !cal.p12) {
+        return { canvas: imageCanvas, gespiegelt: false };
+      }
+
+      const dx = cal.p12.x - cal.p0.x;
+      const dy = cal.p12.y - cal.p0.y;
+      if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 2) {
+        return { canvas: imageCanvas, gespiegelt: false };
+      }
+
+      const rot = rotiereCanvasMitPunkten(imageCanvas, [cal.p0, cal.p12], -Math.atan2(dy, dx));
+      let arbeitsCanvas = rot.canvas;
+      let [p0, p12] = rot.points;
+      let gespiegelt = false;
+
+      const lineY = (p0.y + p12.y) / 2;
+      if (lineY > arbeitsCanvas.height / 2) {
+        const flipV = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], false, true);
+        arbeitsCanvas = flipV.canvas;
+        [p0, p12] = flipV.points;
+      }
+
+      const method = String(cal.method || "").toLowerCase();
+      const spiegelungSicher = method.includes("manuell");
+      if (spiegelungSicher && p0.x > p12.x) {
+        const flipH = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], true, false);
+        arbeitsCanvas = flipH.canvas;
+        gespiegelt = true;
+      }
+
+      return { canvas: arbeitsCanvas, gespiegelt };
+    }
+
+    function rotiereCanvasMitPunkten(canvas, points, angleRad) {
+      const sin = Math.abs(Math.sin(angleRad));
+      const cos = Math.abs(Math.cos(angleRad));
+      const newW = Math.max(1, Math.ceil(canvas.width * cos + canvas.height * sin));
+      const newH = Math.max(1, Math.ceil(canvas.width * sin + canvas.height * cos));
+
+      const out = document.createElement("canvas");
+      out.width = newW;
+      out.height = newH;
+      const ctx = out.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, out.width, out.height);
+
+      ctx.translate(newW / 2, newH / 2);
+      ctx.rotate(angleRad);
+      ctx.drawImage(canvas, -canvas.width / 2, -canvas.height / 2);
+
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      const c = Math.cos(angleRad);
+      const s = Math.sin(angleRad);
+      const mapped = points.map((p) => {
+        const rx = (p.x - cx) * c - (p.y - cy) * s;
+        const ry = (p.x - cx) * s + (p.y - cy) * c;
+        return { x: rx + newW / 2, y: ry + newH / 2 };
+      });
+
+      return { canvas: out, points: mapped };
+    }
+
+    function spiegeleCanvasMitPunkten(canvas, points, horizontal, vertikal) {
+      const out = document.createElement("canvas");
+      out.width = canvas.width;
+      out.height = canvas.height;
+      const ctx = out.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.translate(horizontal ? out.width : 0, vertikal ? out.height : 0);
+      ctx.scale(horizontal ? -1 : 1, vertikal ? -1 : 1);
+      ctx.drawImage(canvas, 0, 0);
+
+      const mapped = points.map((p) => ({
+        x: horizontal ? (out.width - p.x) : p.x,
+        y: vertikal ? (out.height - p.y) : p.y,
+      }));
+
+      return { canvas: out, points: mapped };
+    }
+
+    function zeichneCanvasGrundbild(canvas) {
+      previewCanvas.width = canvas.width;
+      previewCanvas.height = canvas.height;
+      previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewCtx.drawImage(canvas, 0, 0);
+    }
+
+    function zeichneAktuelleVorschau() {
+      if (!appState.processedCanvas || !appState.calibration) {
+        if (appState.sourceCanvas) zeichneCanvasGrundbild(appState.sourceCanvas);
+        return;
+      }
+
+      zeichneCanvasGrundbild(appState.processedCanvas);
+      const { p0, p12 } = appState.calibration;
+      const color = appState.calibration.overlayColor || (appState.calibration.lineSicher ? "#00a651" : "#d97706");
+
+      previewCtx.save();
+      if (!appState.calibration.lineSicher) {
+        previewCtx.setLineDash([10, 7]);
+      }
+      previewCtx.strokeStyle = color;
+      previewCtx.fillStyle = color;
+      previewCtx.lineWidth = Math.max(2, previewCanvas.width / 500);
+      previewCtx.beginPath();
+      previewCtx.moveTo(p0.x, p0.y);
+      previewCtx.lineTo(p12.x, p12.y);
+      previewCtx.stroke();
+      previewCtx.setLineDash([]);
+
+      zeichneEndstrich(previewCtx, p0, p12, color);
+      zeichneEndstrich(previewCtx, p12, p0, color);
+      previewCtx.restore();
+
+      if (appState.manuellAktiv && appState.manuellePunkte.length === 1) {
+        const p = appState.manuellePunkte[0];
+        previewCtx.fillStyle = "#0ea55f";
+        zeichnePunkt(previewCtx, p.x, p.y, 7);
+      }
+    }
+
+    function updateMetrics() {
+      if (!appState.calibration) {
+        methodeWert.textContent = "Methode: -";
+        winkelWert.textContent = "Korrekturwinkel: -";
+        distanzWert.textContent = "0-12 cm Distanz (px): -";
+        auflWert.textContent = "Berechnete Auflösung: -";
+        groesseWert.textContent = "Bildgröße bei 1:1: -";
+        return;
+      }
+
+      const c = appState.calibration;
+      methodeWert.textContent = "Methode: " + c.method;
+      winkelWert.textContent = "Korrekturwinkel: " + (c.angleDeg || 0).toFixed(2) + "°";
+      distanzWert.textContent = "0-12 cm Distanz (px): " + c.pixelDist.toFixed(2);
+      auflWert.textContent = "Berechnete Auflösung: " + c.pxProMm.toFixed(4) + " px/mm";
+      groesseWert.textContent = "Bildgröße bei 1:1: " + c.imageBreiteMm.toFixed(2) + " mm × " + c.imageHoeheMm.toFixed(2) + " mm";
+    }
+
+    function resetStateForNewFile() {
+      appState.calibration = null;
+      appState.processedCanvas = null;
+      appState.manuellAktiv = false;
+      appState.manuellePunkte = [];
+      appState.drag = { active: false, mode: null, last: null };
+      manualNote.style.display = "none";
+      setAutoAlarm(false);
+      setBusy(false);
+      downloadBtn.disabled = true;
+      printBtn.disabled = true;
+      updateMetrics();
+    }
+
+    function setAutoAlarm(aktiv, text = "") {
+      appState.alarmAktiv = aktiv;
+      if (!aktiv) {
+        autoAlarm.style.display = "none";
+        autoAlarm.textContent = "";
+        return;
+      }
+      autoAlarm.textContent = text || "ALARM: Automatische Erkennung unsicher.";
+      autoAlarm.style.display = "block";
+    }
+
+    function setBusy(aktiv, text = "In Bearbeitung ...") {
+      if (!busyIndicator) {
+        return;
+      }
+      if (!aktiv) {
+        busyIndicator.style.display = "none";
+        return;
+      }
+      const label = busyIndicator.querySelector(".busy-label");
+      if (label) {
+        label.textContent = text;
+      }
+      busyIndicator.style.display = "block";
+    }
+
+    function setBatchLogStart(anzahl) {
+      batchLog.innerHTML = "";
+      schreibeBatchLog("Batch gestartet: " + anzahl + " Datei(en)", "");
+    }
+
+    function schreibeBatchLog(text, type) {
+      const item = document.createElement("div");
+      item.className = "batch-item" + (type ? " " + type : "");
+      item.textContent = text;
+      batchLog.appendChild(item);
+      batchLog.scrollTop = batchLog.scrollHeight;
+    }
+
+    async function ladeBlobHerunter(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      await new Promise((resolve) => setTimeout(resolve, 180));
+      URL.revokeObjectURL(url);
+    }
+
+    async function druckeCanvasDirekt(cal, imageCanvas) {
+      const druckCanvas = erstelleA4DruckCanvas(cal, imageCanvas);
+      const dataUrl = druckCanvas.toDataURL("image/png", 1);
+      const frame = document.createElement("iframe");
+      frame.style.position = "fixed";
+      frame.style.right = "0";
+      frame.style.bottom = "0";
+      frame.style.width = "0";
+      frame.style.height = "0";
+      frame.style.border = "0";
+      frame.srcdoc = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    @page { size: A4 portrait; margin: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 210mm;
+      height: 297mm;
+      overflow: hidden;
+      background: #fff;
+    }
+    .sheet {
+      position: relative;
+      width: 210mm;
+      height: 297mm;
+      overflow: hidden;
+      background: #fff;
+      page-break-inside: avoid;
+    }
+    img {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 210mm;
+      height: 297mm;
+      object-fit: fill;
+      image-rendering: high-quality;
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet">
+    <img src="${dataUrl}" alt="A4 Druckbild" />
+  </div>
+</body>
+</html>`;
+      document.body.appendChild(frame);
+
+      await new Promise((resolve) => {
+        frame.onload = () => {
+          try {
+            frame.contentWindow.focus();
+            frame.contentWindow.print();
+            setStatus("Druckdialog geöffnet. Bitte auf 100% / Tatsächliche Größe achten.");
+          } catch {
+            setStatus("Druckdialog konnte nicht direkt geöffnet werden. Bitte PDF herunterladen und drucken.");
+          } finally {
+            setTimeout(() => {
+              frame.remove();
+              resolve();
+            }, 1200);
+          }
+        };
+      });
+    }
+
+    function setStatus(text, isError = false) {
+      statusBox.textContent = "Status: " + text;
+      statusBox.classList.toggle("error", Boolean(isError));
+    }
+
+    function waitForOpenCv() {
+      return new Promise((resolve, reject) => {
+        const started = Date.now();
+        const timer = setInterval(() => {
+          const ready = window.cv && typeof cv.Mat === "function";
+          if (ready) {
+            clearInterval(timer);
+            resolve();
+            return;
+          }
+          if (Date.now() - started > 45000) {
+            clearInterval(timer);
+            reject(new Error("Timeout beim Laden von OpenCV.js"));
+          }
+        }, 120);
+      });
+    }
+
+    function ladeBild(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Bild konnte nicht geladen werden."));
+        img.src = src;
+      });
+    }
+
+    function canvasToBytes(canvas) {
+      return new Promise((resolve, reject) => {
+        canvas.toBlob(async (blob) => {
+          if (!blob) {
+            reject(new Error("Canvas konnte nicht umgewandelt werden."));
+            return;
+          }
+          const buf = await blob.arrayBuffer();
+          resolve(new Uint8Array(buf));
+        }, "image/png", 1);
+      });
+    }
+
+    function canvasKoordinateAusKlick(event, canvas) {
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return null;
+      return {
+        x: (event.clientX - rect.left) * (canvas.width / rect.width),
+        y: (event.clientY - rect.top) * (canvas.height / rect.height),
+      };
+    }
+
+    function punktZuLinieDistanz(p, a, b) {
+      const l2 = Math.max(1e-6, distanz(a, b) ** 2);
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2));
+      const proj = { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) };
+      return distanz(p, proj);
+    }
+
+    function ermittleHoverModus(p) {
+      if (!appState.calibration) {
+        return "none";
+      }
+      const { p0, p12 } = appState.calibration;
+      const r = 18;
+      if (distanz(p, p0) <= r) {
+        return "p0";
+      }
+      if (distanz(p, p12) <= r) {
+        return "p12";
+      }
+      if (punktZuLinieDistanz(p, p0, p12) <= 14) {
+        return "line";
+      }
+      return "none";
+    }
+
+    function zeichneEndstrich(ctx, endpoint, other, color) {
+      const dx = other.x - endpoint.x;
+      const dy = other.y - endpoint.y;
+      const len = Math.max(1, Math.hypot(dx, dy));
+      const ux = dx / len;
+      const uy = dy / len;
+      const px = -uy;
+      const py = ux;
+      const half = Math.max(8, previewCanvas.width / 90);
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = Math.max(3, previewCanvas.width / 340);
+      ctx.beginPath();
+      ctx.moveTo(endpoint.x - px * half, endpoint.y - py * half);
+      ctx.lineTo(endpoint.x + px * half, endpoint.y + py * half);
+      ctx.stroke();
+
+      ctx.lineWidth = Math.max(2, previewCanvas.width / 520);
+      ctx.beginPath();
+      ctx.moveTo(endpoint.x, endpoint.y);
+      ctx.lineTo(endpoint.x + ux * (half * 0.8), endpoint.y + uy * (half * 0.8));
+      ctx.stroke();
+    }
+
+    function dateinameOhneEndung(name) {
+      return (name || "schablone").replace(/\.[^/.]+$/, "");
+    }
+
+    function quantile(sorted, q) {
+      if (!sorted.length) return 0;
+      const idx = (sorted.length - 1) * q;
+      const lo = Math.floor(idx);
+      const hi = Math.ceil(idx);
+      if (lo === hi) return sorted[lo];
+      const t = idx - lo;
+      return sorted[lo] * (1 - t) + sorted[hi] * t;
+    }
+
+    function median(values) {
+      if (!values.length) return 0;
+      const copy = values.slice().sort((a, b) => a - b);
+      const mid = Math.floor(copy.length / 2);
+      return copy.length % 2 ? copy[mid] : (copy[mid - 1] + copy[mid]) / 2;
+    }
+
+    function distanz(a, b) {
+      return Math.hypot((b.x - a.x), (b.y - a.y));
+    }
+
+    function mmZuPt(mm) {
+      return mm * MM_TO_PT;
+    }
+
+    (function initPreview() {
+      previewCtx.fillStyle = "#f4f8f5";
+      previewCtx.fillRect(0, 0, previewCanvas.width, previewCanvas.height);
+      previewCtx.fillStyle = "#6b7e71";
+      previewCtx.font = "600 24px Avenir Next";
+      previewCtx.textAlign = "center";
+      previewCtx.fillText("Vorschau erscheint nach Upload", previewCanvas.width / 2, previewCanvas.height / 2);
+    })();
+  </script>
+</body>
+</html>
