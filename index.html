@@ -1263,7 +1263,20 @@
         height: mmZuPt(A4_HOEHE_MM),
       });
       const bytes = await pdfDoc.save();
-      return new Blob([bytes], { type: "application/pdf" });
+      return await sichereNurErstePdfSeite(bytes);
+    }
+
+    async function sichereNurErstePdfSeite(pdfBytes) {
+      const src = await PDFLib.PDFDocument.load(pdfBytes);
+      if (src.getPageCount() <= 1) {
+        return new Blob([pdfBytes], { type: "application/pdf" });
+      }
+
+      const out = await PDFLib.PDFDocument.create();
+      const [firstPage] = await out.copyPages(src, [0]);
+      out.addPage(firstPage);
+      const outBytes = await out.save();
+      return new Blob([outBytes], { type: "application/pdf" });
     }
 
     function berechneKalibrierungAusLinie(base, outputCanvas) {
@@ -1341,8 +1354,7 @@
         [p0, p12] = flipV.points;
       }
 
-      const method = String(cal.method || "").toLowerCase();
-      const spiegelungSicher = method.includes("manuell");
+      const spiegelungSicher = Boolean(cal.lineSicher);
       if (spiegelungSicher && p0.x > p12.x) {
         const flipH = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], true, false);
         arbeitsCanvas = flipH.canvas;
