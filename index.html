@@ -488,6 +488,8 @@
     const MM_TO_PT = 72 / 25.4;
     const A4_BREITE_MM = 210;
     const A4_HOEHE_MM = 297;
+    const DRUCKRAND_MM = 8;
+    const WEISS_THRESH = 246;
 
     const dateiInput = document.getElementById("dateiInput");
     const batchInput = document.getElementById("batchInput");
@@ -1302,7 +1304,8 @@
 
     function erstelleA4DruckCanvas(cal, imageCanvas) {
       const normalized = normalisiereAusrichtungBild(cal, imageCanvas);
-      const quelle = normalized.canvas;
+      const trimmed = trimmeWeisseRaender(normalized.canvas, WEISS_THRESH);
+      const quelle = trimmed.canvas;
 
       let pxProMm = Number(cal && cal.pxProMm);
       if (!Number.isFinite(pxProMm) || pxProMm <= 0) {
@@ -1325,10 +1328,74 @@
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, out.width, out.height);
 
-      const x = Math.round((out.width - quelle.width) / 2);
-      const y = Math.round((out.height - quelle.height) / 2);
+      const marginPx = Math.max(0, Math.round(pxProMm * DRUCKRAND_MM));
+      const minX = marginPx;
+      const minY = marginPx;
+      const maxX = out.width - marginPx - quelle.width;
+      const maxY = out.height - marginPx - quelle.height;
+
+      let x = Math.round((out.width - quelle.width) / 2);
+      let y = Math.round((out.height - quelle.height) / 2);
+      if (maxX >= minX) {
+        x = Math.max(minX, Math.min(maxX, x));
+      }
+      if (maxY >= minY) {
+        y = Math.max(minY, Math.min(maxY, y));
+      }
+
       ctx.drawImage(quelle, x, y);
       return out;
+    }
+
+    function trimmeWeisseRaender(canvas, threshold = 246) {
+      const w = canvas.width;
+      const h = canvas.height;
+      if (!w || !h) {
+        return { canvas, cropped: false };
+      }
+
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+
+      const istNichtWeiss = (idx) => (
+        d[idx + 3] > 20 &&
+        (d[idx] < threshold || d[idx + 1] < threshold || d[idx + 2] < threshold)
+      );
+
+      let minX = w;
+      let minY = h;
+      let maxX = -1;
+      let maxY = -1;
+
+      for (let y = 0; y < h; y += 1) {
+        for (let x = 0; x < w; x += 1) {
+          const i = (y * w + x) * 4;
+          if (!istNichtWeiss(i)) continue;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+      }
+
+      if (maxX < minX || maxY < minY) {
+        return { canvas, cropped: false };
+      }
+
+      if (minX === 0 && minY === 0 && maxX === w - 1 && maxY === h - 1) {
+        return { canvas, cropped: false };
+      }
+
+      const out = document.createElement("canvas");
+      out.width = maxX - minX + 1;
+      out.height = maxY - minY + 1;
+      const octx = out.getContext("2d", { alpha: false });
+      octx.fillStyle = "#ffffff";
+      octx.fillRect(0, 0, out.width, out.height);
+      octx.drawImage(canvas, minX, minY, out.width, out.height, 0, 0, out.width, out.height);
+
+      return { canvas: out, cropped: true };
     }
 
     function normalisiereAusrichtungBild(cal, imageCanvas) {
