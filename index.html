@@ -488,7 +488,7 @@
     const MM_TO_PT = 72 / 25.4;
     const A4_BREITE_MM = 210;
     const A4_HOEHE_MM = 297;
-    const DRUCKRAND_MM = 8;
+    const DRUCKRAND_MM = 10;
     const WEISS_THRESH = 246;
 
     const dateiInput = document.getElementById("dateiInput");
@@ -1358,26 +1358,42 @@
       const img = ctx.getImageData(0, 0, w, h);
       const d = img.data;
 
-      const istNichtWeiss = (idx) => (
-        d[idx + 3] > 20 &&
-        (d[idx] < threshold || d[idx + 1] < threshold || d[idx + 2] < threshold)
-      );
+      let sumLuma = 0;
+      let sampleCount = 0;
+      for (let i = 0; i < d.length; i += 16) {
+        if (d[i + 3] <= 20) continue;
+        const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        sumLuma += l;
+        sampleCount += 1;
+      }
+      const avgLuma = sampleCount ? (sumLuma / sampleCount) : 255;
+      const darkThreshold = Math.max(120, Math.min(threshold, Math.round(avgLuma - 24)));
 
-      let minX = w;
-      let minY = h;
-      let maxX = -1;
-      let maxY = -1;
-
+      const rowDark = new Uint32Array(h);
+      const colDark = new Uint32Array(w);
       for (let y = 0; y < h; y += 1) {
         for (let x = 0; x < w; x += 1) {
           const i = (y * w + x) * 4;
-          if (!istNichtWeiss(i)) continue;
-          if (x < minX) minX = x;
-          if (x > maxX) maxX = x;
-          if (y < minY) minY = y;
-          if (y > maxY) maxY = y;
+          if (d[i + 3] <= 20) continue;
+          const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          if (l < darkThreshold) {
+            rowDark[y] += 1;
+            colDark[x] += 1;
+          }
         }
       }
+
+      const minRowHits = Math.max(8, Math.round(w * 0.004));
+      const minColHits = Math.max(8, Math.round(h * 0.004));
+
+      let minY = 0;
+      while (minY < h && rowDark[minY] < minRowHits) minY += 1;
+      let maxY = h - 1;
+      while (maxY >= 0 && rowDark[maxY] < minRowHits) maxY -= 1;
+      let minX = 0;
+      while (minX < w && colDark[minX] < minColHits) minX += 1;
+      let maxX = w - 1;
+      while (maxX >= 0 && colDark[maxX] < minColHits) maxX -= 1;
 
       if (maxX < minX || maxY < minY) {
         return { canvas, cropped: false };
@@ -1422,13 +1438,90 @@
       }
 
       const spiegelungSicher = Boolean(cal.lineSicher);
-      if (spiegelungSicher && p0.x > p12.x) {
+      const endpointReversed = p0.x > p12.x;
+      const inkHintMirrored = istSpiegelungAnhandSkalenText(arbeitsCanvas, p0, p12);
+      if (spiegelungSicher && (endpointReversed || inkHintMirrored)) {
         const flipH = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], true, false);
         arbeitsCanvas = flipH.canvas;
         gespiegelt = true;
       }
 
       return { canvas: arbeitsCanvas, gespiegelt };
+    }
+
+    function istSpiegelungAnhandSkalenText(canvas, p0, p12) {
+      const len = distanz(p0, p12);
+      if (!Number.isFinite(len) || len < Math.max(80, canvas.width * 0.2)) {
+        return false;
+      }
+
+      const lineY = (p0.y + p12.y) / 2;
+      if (lineY > canvas.height * 0.45) {
+        return false;
+      }
+
+      const x0 = Math.max(0, Math.floor(Math.min(p0.x, p12.x)));
+      const x1 = Math.min(canvas.width - 1, Math.ceil(Math.max(p0.x, p12.x)));
+      const sampleW = x1 - x0 + 1;
+      if (sampleW < 40) {
+        return false;
+      }
+
+      const y0 = Math.max(0, Math.floor(lineY + 2));
+      const y1 = Math.min(canvas.height - 1, Math.ceil(lineY + Math.max(24, canvas.height * 0.12)));
+      const sampleH = y1 - y0 + 1;
+      if (sampleH < 12) {
+        return false;
+      }
+
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const img = ctx.getImageData(x0, y0, sampleW, sampleH);
+      const d = img.data;
+
+      let sumLuma = 0;
+      let count = 0;
+      for (let i = 0; i < d.length; i += 16) {
+        if (d[i + 3] <= 20) continue;
+        sumLuma += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        count += 1;
+      }
+      const avgLuma = count ? (sumLuma / count) : 255;
+      const darkThreshold = Math.max(95, Math.min(200, Math.round(avgLuma - 28)));
+
+      const bandW = Math.max(8, Math.round(sampleW * 0.18));
+      const rightStart = sampleW - bandW;
+
+      let leftDark = 0;
+      let rightDark = 0;
+      let leftInk = 0;
+      let rightInk = 0;
+
+      for (let y = 0; y < sampleH; y += 1) {
+        for (let x = 0; x < sampleW; x += 1) {
+          if (x >= bandW && x < rightStart) continue;
+          const i = (y * sampleW + x) * 4;
+          if (d[i + 3] <= 20) continue;
+          const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          const ink = Math.max(0, 255 - l);
+          const isDark = l < darkThreshold;
+
+          if (x < bandW) {
+            if (isDark) leftDark += 1;
+            leftInk += ink;
+          } else {
+            if (isDark) rightDark += 1;
+            rightInk += ink;
+          }
+        }
+      }
+
+      const leftScore = leftDark * 1.4 + leftInk / 48;
+      const rightScore = rightDark * 1.4 + rightInk / 48;
+      if (leftScore < 40 || rightScore < 40) {
+        return false;
+      }
+
+      return leftScore > rightScore * 1.18 && (leftScore - rightScore) > 28;
     }
 
     function rotiereCanvasMitPunkten(canvas, points, angleRad) {
@@ -1605,8 +1698,8 @@
     }
 
     async function druckeCanvasDirekt(cal, imageCanvas) {
-      const druckCanvas = erstelleA4DruckCanvas(cal, imageCanvas);
-      const dataUrl = druckCanvas.toDataURL("image/png", 1);
+      const pdfBlob = await erzeugeA4Pdf(cal, imageCanvas);
+      const pdfUrl = URL.createObjectURL(pdfBlob);
       const frame = document.createElement("iframe");
       frame.style.position = "fixed";
       frame.style.right = "0";
@@ -1614,60 +1707,40 @@
       frame.style.width = "0";
       frame.style.height = "0";
       frame.style.border = "0";
-      frame.srcdoc = `<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <style>
-    @page { size: A4 portrait; margin: 0; }
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 210mm;
-      height: 297mm;
-      overflow: hidden;
-      background: #fff;
-    }
-    .sheet {
-      position: relative;
-      width: 210mm;
-      height: 297mm;
-      overflow: hidden;
-      background: #fff;
-      page-break-inside: avoid;
-    }
-    img {
-      position: absolute;
-      left: 0;
-      top: 0;
-      width: 210mm;
-      height: 297mm;
-      object-fit: fill;
-      image-rendering: high-quality;
-    }
-  </style>
-</head>
-<body>
-  <div class="sheet">
-    <img src="${dataUrl}" alt="A4 Druckbild" />
-  </div>
-</body>
-</html>`;
+      frame.src = pdfUrl;
       document.body.appendChild(frame);
 
       await new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          setTimeout(() => {
+            frame.remove();
+            URL.revokeObjectURL(pdfUrl);
+            resolve();
+          }, 1800);
+        };
+
         frame.onload = () => {
+          setTimeout(() => {
+            try {
+              frame.contentWindow.focus();
+              frame.contentWindow.print();
+              setStatus("Druckdialog geöffnet. Bitte auf 100% / Tatsächliche Größe achten.");
+            } catch {
+              setStatus("Druckdialog konnte nicht direkt geöffnet werden. Bitte PDF herunterladen und drucken.");
+            } finally {
+              finish();
+            }
+          }, 350);
+        };
+
+        frame.onerror = () => {
           try {
-            frame.contentWindow.focus();
-            frame.contentWindow.print();
-            setStatus("Druckdialog geöffnet. Bitte auf 100% / Tatsächliche Größe achten.");
-          } catch {
             setStatus("Druckdialog konnte nicht direkt geöffnet werden. Bitte PDF herunterladen und drucken.");
           } finally {
-            setTimeout(() => {
-              frame.remove();
-              resolve();
-            }, 1200);
+            finish();
           }
         };
       });
