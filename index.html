@@ -1491,7 +1491,14 @@
         gespiegelt = true;
       }
 
-      const ocrWordsFinal = shouldMirror ? ocrHint.mirroredWords : ocrHint.normalWords;
+      let ocrWordsFinal = shouldMirror ? ocrHint.mirroredDisplayWords : ocrHint.normalDisplayWords;
+      if (!ocrWordsFinal || ocrWordsFinal.length === 0) {
+        const fallbackHint = await entscheideSpiegelungMitOcr(imageCanvas, cal.p0, cal.p12);
+        const fallbackWords = fallbackHint.normalDisplayWords && fallbackHint.normalDisplayWords.length
+          ? fallbackHint.normalDisplayWords
+          : fallbackHint.mirroredDisplayWords;
+        ocrWordsFinal = fallbackWords || [];
+      }
       return { canvas: arbeitsCanvas, gespiegelt, ocrWordsFinal };
     }
 
@@ -1503,43 +1510,47 @@
           shouldMirror: false,
           normalWords: [],
           mirroredWords: [],
+          normalDisplayWords: [],
+          mirroredDisplayWords: [],
         };
       }
 
-      const roi = holeTextRoiUnterLineal(canvas, p0, p12);
-      if (!roi) {
-        return {
-          available: true,
-          decisive: false,
-          shouldMirror: false,
-          normalWords: [],
-          mirroredWords: [],
-        };
-      }
-
-      const key = berechneRoiFingerprint(roi);
+      const ocrBase = bereiteCanvasFuerOcr(canvas, false);
+      const ocrBaseBin = bereiteCanvasFuerOcr(canvas, true);
+      const key = berechneRoiFingerprint(ocrBase);
       if (ocrMirrorCache.has(key)) {
         return ocrMirrorCache.get(key);
       }
 
       try {
-        const mirrored = spiegeleCanvasHorizontal(roi);
+        const mirrored = spiegeleCanvasHorizontal(ocrBase);
+        const mirroredBin = spiegeleCanvasHorizontal(ocrBaseBin);
         const [normalText, mirroredText] = await Promise.all([
-          leseTextMitOcr(roi),
-          leseTextMitOcr(mirrored),
+          leseTextMitOcr([ocrBase, ocrBaseBin]),
+          leseTextMitOcr([mirrored, mirroredBin]),
         ]);
 
         const normalEval = bewerteKeywordTreffer(normalText);
         const mirroredEval = bewerteKeywordTreffer(mirroredText);
 
+        let decisive = false;
+        let shouldMirror = false;
+        if (mirroredEval.score >= normalEval.score + 1 && mirroredEval.words.length >= 1) {
+          decisive = true;
+          shouldMirror = true;
+        } else if (normalEval.score >= mirroredEval.score + 1 && normalEval.words.length >= 1) {
+          decisive = true;
+          shouldMirror = false;
+        }
+
         const result = {
           available: true,
-          decisive:
-            (mirroredEval.score >= normalEval.score + 2 && mirroredEval.words.length >= 2) ||
-            (normalEval.score >= mirroredEval.score + 2 && normalEval.words.length >= 2),
-          shouldMirror: mirroredEval.score >= normalEval.score + 2 && mirroredEval.words.length >= 2,
+          decisive,
+          shouldMirror,
           normalWords: normalEval.words,
           mirroredWords: mirroredEval.words,
+          normalDisplayWords: normalEval.displayWords,
+          mirroredDisplayWords: mirroredEval.displayWords,
         };
         ocrMirrorCache.set(key, result);
         return result;
@@ -1550,8 +1561,53 @@
           shouldMirror: false,
           normalWords: [],
           mirroredWords: [],
+          normalDisplayWords: [],
+          mirroredDisplayWords: [],
         };
       }
+    }
+
+    function bereiteCanvasFuerOcr(canvas, binarize) {
+      const trimmed = trimmeWeisseRaender(canvas, 250).canvas;
+      const basisW = Math.max(1, trimmed.width);
+      const targetW = 1500;
+      const scale = Math.max(1, Math.min(2.8, targetW / basisW));
+      const w = Math.max(1, Math.round(trimmed.width * scale));
+      const h = Math.max(1, Math.round(trimmed.height * scale));
+
+      const out = document.createElement("canvas");
+      out.width = w;
+      out.height = h;
+      const ctx = out.getContext("2d", { alpha: false, willReadFrequently: true });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(trimmed, 0, 0, w, h);
+
+      const img = ctx.getImageData(0, 0, w, h);
+      const d = img.data;
+      let mean = 0;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        mean += l;
+        n += 1;
+      }
+      mean = n ? (mean / n) : 255;
+      const threshold = Math.max(110, Math.min(220, Math.round(mean - 8)));
+
+      for (let i = 0; i < d.length; i += 4) {
+        let l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        l = Math.max(0, Math.min(255, (l - 128) * 1.35 + 128));
+        if (binarize) {
+          l = l >= threshold ? 255 : 0;
+        }
+        d[i] = l;
+        d[i + 1] = l;
+        d[i + 2] = l;
+        d[i + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      return out;
     }
 
     function holeTextRoiUnterLineal(canvas, p0, p12) {
@@ -1585,16 +1641,48 @@
       return out;
     }
 
-    async function leseTextMitOcr(canvas) {
-      const dataUrl = canvas.toDataURL("image/png", 1);
-      const result = await window.Tesseract.recognize(dataUrl, "deu+eng", {
-        logger: () => {},
-      });
-      return (result && result.data && result.data.text) ? result.data.text : "";
+    async function leseTextMitOcr(canvasOrList) {
+      const candidates = Array.isArray(canvasOrList) ? canvasOrList : [canvasOrList];
+      let bestText = "";
+      let bestScore = -1;
+
+      for (const canvas of candidates) {
+        const dataUrl = canvas.toDataURL("image/png", 1);
+        for (const lang of ["eng", "deu+eng"]) {
+          try {
+            const result = await window.Tesseract.recognize(dataUrl, lang, {
+              logger: () => {},
+              tessedit_pageseg_mode: "6",
+              preserve_interword_spaces: "1",
+            });
+            const text = (result && result.data && result.data.text) ? result.data.text : "";
+            const quality = bewerteOcrRohtext(text);
+            if (quality > bestScore) {
+              bestScore = quality;
+              bestText = text;
+            }
+            if (quality >= 12) {
+              return text;
+            }
+          } catch {
+            // Try next language/variant.
+          }
+        }
+      }
+
+      return bestText || "";
+    }
+
+    function bewerteOcrRohtext(text) {
+      if (!text) return 0;
+      const norm = text.toLowerCase().replace(/[^a-z0-9äöüß ]+/g, " ").replace(/\s+/g, " ").trim();
+      if (!norm) return 0;
+      const tokens = norm.split(" ").filter((t) => t.length >= 3 && !/^\d+$/.test(t));
+      return tokens.length;
     }
 
     function bewerteKeywordTreffer(text) {
-      if (!text) return { score: 0, words: [] };
+      if (!text) return { score: 0, words: [], displayWords: [] };
       const norm = text
         .toLowerCase()
         .replace(/\r?\n/g, " ")
@@ -1602,19 +1690,34 @@
         .replace(/\s+/g, " ")
         .trim();
 
-      if (!norm) return { score: 0, words: [] };
+      if (!norm) return { score: 0, words: [], displayWords: [] };
 
       const words = [];
       if (/\bdatum\b/.test(norm)) words.push("datum");
-      if (/\bcoloplast\b/.test(norm)) words.push("coloplast");
+      if (/\bcolo?plast\b/.test(norm)) words.push("coloplast");
       if (/\bstoma\b/.test(norm)) words.push("stoma");
-      if (/\bname\b/.test(norm)) words.push("name");
+      if (/\bna[rm]e\b/.test(norm)) words.push("name");
       if (/\bmess\s*schablon[a-z]*\b/.test(norm) || /\bmessschablon[a-z]*\b/.test(norm)) {
         words.push("messschablone");
       }
 
       const unique = [...new Set(words.filter((w) => OCR_KEYWORDS.includes(w)))];
-      return { score: unique.length, words: unique };
+      const rawWords = extrahiereOcrRohWoerter(norm);
+      const displayWords = unique.length ? unique : rawWords;
+      return { score: unique.length, words: unique, displayWords };
+    }
+
+    function extrahiereOcrRohWoerter(normText) {
+      const stop = new Set(["der", "die", "das", "und", "oder", "mit", "von", "auf", "ein", "eine", "for", "the", "and"]);
+      const parts = normText.split(" ").filter((w) => w.length >= 4 && !/^\d+$/.test(w) && !stop.has(w));
+      const freq = new Map();
+      for (const p of parts) {
+        freq.set(p, (freq.get(p) || 0) + 1);
+      }
+      return [...freq.entries()]
+        .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length)
+        .slice(0, 6)
+        .map((it) => it[0]);
     }
 
     function spiegeleCanvasHorizontal(canvas) {
