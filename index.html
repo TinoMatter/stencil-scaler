@@ -481,6 +481,7 @@
 
   <script src="./vendor/pdf.min.js"></script>
   <script src="./vendor/pdf-lib.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <script async src="./vendor/opencv.js"></script>
   <script>
     pdfjsLib.GlobalWorkerOptions.workerSrc = "./vendor/pdf.worker.min.js";
@@ -490,6 +491,9 @@
     const A4_HOEHE_MM = 297;
     const DRUCKRAND_MM = 10;
     const WEISS_THRESH = 246;
+    const OCR_KEYWORDS = ["datum", "coloplast", "stoma", "messschablone", "messschablonen", "name"];
+
+    const ocrMirrorCache = new Map();
 
     const dateiInput = document.getElementById("dateiInput");
     const batchInput = document.getElementById("batchInput");
@@ -1254,7 +1258,7 @@
     async function erzeugeA4Pdf(cal, imageCanvas) {
       const pdfDoc = await PDFLib.PDFDocument.create();
       const page = pdfDoc.addPage([mmZuPt(A4_BREITE_MM), mmZuPt(A4_HOEHE_MM)]);
-      const druckCanvas = erstelleA4DruckCanvas(cal, imageCanvas);
+      const druckCanvas = await erstelleA4DruckCanvas(cal, imageCanvas);
       const png = await canvasToBytes(druckCanvas);
       const img = await pdfDoc.embedPng(png);
 
@@ -1302,10 +1306,10 @@
       };
     }
 
-    function erstelleA4DruckCanvas(cal, imageCanvas) {
-      const normalized = normalisiereAusrichtungBild(cal, imageCanvas);
+    async function erstelleA4DruckCanvas(cal, imageCanvas) {
+      const normalized = await normalisiereAusrichtungBild(cal, imageCanvas);
       const trimmed = trimmeWeisseRaender(normalized.canvas, WEISS_THRESH);
-      const quelle = trimmed.canvas;
+      let quelle = trimmed.canvas;
 
       let pxProMm = Number(cal && cal.pxProMm);
       if (!Number.isFinite(pxProMm) || pxProMm <= 0) {
@@ -1329,6 +1333,10 @@
       ctx.fillRect(0, 0, out.width, out.height);
 
       const marginPx = Math.max(0, Math.round(pxProMm * DRUCKRAND_MM));
+      const inhaltMaxW = Math.max(1, out.width - marginPx * 2);
+      const inhaltMaxH = Math.max(1, out.height - marginPx * 2);
+      quelle = schneideCanvasZentral(quelle, inhaltMaxW, inhaltMaxH);
+
       const minX = marginPx;
       const minY = marginPx;
       const maxX = out.width - marginPx - quelle.width;
@@ -1344,6 +1352,26 @@
       }
 
       ctx.drawImage(quelle, x, y);
+      return out;
+    }
+
+    function schneideCanvasZentral(canvas, maxW, maxH) {
+      if (canvas.width <= maxW && canvas.height <= maxH) {
+        return canvas;
+      }
+
+      const w = Math.max(1, Math.min(canvas.width, maxW));
+      const h = Math.max(1, Math.min(canvas.height, maxH));
+      const sx = Math.max(0, Math.floor((canvas.width - w) / 2));
+      const sy = Math.max(0, Math.floor((canvas.height - h) / 2));
+
+      const out = document.createElement("canvas");
+      out.width = w;
+      out.height = h;
+      const octx = out.getContext("2d", { alpha: false });
+      octx.fillStyle = "#ffffff";
+      octx.fillRect(0, 0, w, h);
+      octx.drawImage(canvas, sx, sy, w, h, 0, 0, w, h);
       return out;
     }
 
@@ -1414,7 +1442,7 @@
       return { canvas: out, cropped: true };
     }
 
-    function normalisiereAusrichtungBild(cal, imageCanvas) {
+    async function normalisiereAusrichtungBild(cal, imageCanvas) {
       if (!cal || !cal.p0 || !cal.p12) {
         return { canvas: imageCanvas, gespiegelt: false };
       }
@@ -1440,13 +1468,149 @@
       const spiegelungSicher = Boolean(cal.lineSicher);
       const endpointReversed = p0.x > p12.x;
       const inkHintMirrored = istSpiegelungAnhandSkalenText(arbeitsCanvas, p0, p12);
-      if (spiegelungSicher && (endpointReversed || inkHintMirrored)) {
+      const ocrHint = await entscheideSpiegelungMitOcr(arbeitsCanvas, p0, p12);
+
+      const shouldMirror = ocrHint.confident
+        ? ocrHint.shouldMirror
+        : (spiegelungSicher && (endpointReversed || inkHintMirrored));
+
+      if (shouldMirror) {
         const flipH = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], true, false);
         arbeitsCanvas = flipH.canvas;
         gespiegelt = true;
       }
 
       return { canvas: arbeitsCanvas, gespiegelt };
+    }
+
+    async function entscheideSpiegelungMitOcr(canvas, p0, p12) {
+      if (!window.Tesseract || typeof window.Tesseract.recognize !== "function") {
+        return { confident: false, shouldMirror: false };
+      }
+
+      const roi = holeTextRoiUnterLineal(canvas, p0, p12);
+      if (!roi) {
+        return { confident: false, shouldMirror: false };
+      }
+
+      const key = berechneRoiFingerprint(roi);
+      if (ocrMirrorCache.has(key)) {
+        return ocrMirrorCache.get(key);
+      }
+
+      try {
+        const mirrored = spiegeleCanvasHorizontal(roi);
+        const [normalText, mirroredText] = await Promise.all([
+          leseTextMitOcr(roi),
+          leseTextMitOcr(mirrored),
+        ]);
+
+        const normalScore = bewerteKeywordTreffer(normalText);
+        const mirroredScore = bewerteKeywordTreffer(mirroredText);
+        const diff = mirroredScore - normalScore;
+
+        const result = {
+          confident: Math.max(normalScore, mirroredScore) >= 2 && Math.abs(diff) >= 2,
+          shouldMirror: diff >= 2,
+        };
+        ocrMirrorCache.set(key, result);
+        return result;
+      } catch {
+        return { confident: false, shouldMirror: false };
+      }
+    }
+
+    function holeTextRoiUnterLineal(canvas, p0, p12) {
+      const len = distanz(p0, p12);
+      if (!Number.isFinite(len) || len < Math.max(90, canvas.width * 0.18)) {
+        return null;
+      }
+
+      const lineY = (p0.y + p12.y) / 2;
+      if (lineY > canvas.height * 0.45) {
+        return null;
+      }
+
+      const x0 = Math.max(0, Math.floor(Math.min(p0.x, p12.x)));
+      const x1 = Math.min(canvas.width - 1, Math.ceil(Math.max(p0.x, p12.x)));
+      const y0 = Math.max(0, Math.floor(lineY + 1));
+      const y1 = Math.min(canvas.height - 1, Math.ceil(lineY + Math.max(40, canvas.height * 0.2)));
+      const w = x1 - x0 + 1;
+      const h = y1 - y0 + 1;
+      if (w < 60 || h < 16) {
+        return null;
+      }
+
+      const out = document.createElement("canvas");
+      out.width = w;
+      out.height = h;
+      const ctx = out.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(canvas, x0, y0, w, h, 0, 0, w, h);
+      return out;
+    }
+
+    async function leseTextMitOcr(canvas) {
+      const dataUrl = canvas.toDataURL("image/png", 1);
+      const result = await window.Tesseract.recognize(dataUrl, "deu+eng", {
+        logger: () => {},
+      });
+      return (result && result.data && result.data.text) ? result.data.text : "";
+    }
+
+    function bewerteKeywordTreffer(text) {
+      if (!text) return 0;
+      const norm = text
+        .toLowerCase()
+        .replace(/\r?\n/g, " ")
+        .replace(/[^a-z0-9äöüß ]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      if (!norm) return 0;
+
+      let score = 0;
+      for (const kw of OCR_KEYWORDS) {
+        if (norm.includes(kw)) {
+          score += 3;
+          continue;
+        }
+        if (kw === "messschablone" && norm.includes("mess") && norm.includes("schabl")) {
+          score += 2;
+        }
+      }
+      return score;
+    }
+
+    function spiegeleCanvasHorizontal(canvas) {
+      const out = document.createElement("canvas");
+      out.width = canvas.width;
+      out.height = canvas.height;
+      const ctx = out.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.translate(out.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(canvas, 0, 0);
+      return out;
+    }
+
+    function berechneRoiFingerprint(canvas) {
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+      const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const d = img.data;
+
+      let h1 = 2166136261;
+      let h2 = 1315423911;
+      const stride = Math.max(4, Math.floor((canvas.width * canvas.height) / 2400));
+      for (let i = 0; i < d.length; i += 4 * stride) {
+        const l = Math.round(0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]);
+        h1 ^= l;
+        h1 = Math.imul(h1, 16777619);
+        h2 ^= (l + (h2 << 5) + (h2 >> 2));
+      }
+      return canvas.width + "x" + canvas.height + ":" + (h1 >>> 0).toString(16) + ":" + (h2 >>> 0).toString(16);
     }
 
     function istSpiegelungAnhandSkalenText(canvas, p0, p12) {
