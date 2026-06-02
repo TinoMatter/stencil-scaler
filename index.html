@@ -538,6 +538,8 @@
       outputOcrNormalWords: [],
       outputOcrMirroredWords: [],
       outputMirrored: null,
+      ocrBusy: false,
+      ocrRequestId: 0,
     };
 
     const cvReadyPromise = waitForOpenCv();
@@ -652,6 +654,7 @@
       if (appState.drag.active) {
         appState.drag = { active: false, mode: null, last: null };
         previewCanvas.style.cursor = "default";
+        aktualisiereOcrDiagnoseAusKalibrierung();
       }
     });
 
@@ -689,6 +692,7 @@
       appState.manuellePunkte = [];
       manualNote.style.display = "none";
       aktualisiereKalibrierungAusLinie(appState.calibration.method, true, true);
+      aktualisiereOcrDiagnoseAusKalibrierung();
       setAutoAlarm(false);
       setStatus("Manuelle Kalibrierung übernommen. Ausgabe ist bereit.");
     });
@@ -789,6 +793,7 @@
         };
 
         aktualisiereKalibrierungAusLinie(result.method, result.lineSicher, true);
+        await aktualisiereOcrDiagnoseAusKalibrierung();
 
         if (!result.lineSicher) {
           setAutoAlarm(true, "ALARM: Automatische Erkennung unsicher. Vorschlagslinie prüfen, dann per Drag-and-Drop oder manuell korrigieren.");
@@ -1264,6 +1269,41 @@
 
       zeichneAktuelleVorschau();
       updateMetrics();
+    }
+
+    async function aktualisiereOcrDiagnoseAusKalibrierung() {
+      if (!appState.calibration || !appState.processedCanvas) {
+        return;
+      }
+
+      const requestId = ++appState.ocrRequestId;
+      appState.ocrBusy = true;
+      updateMetrics();
+
+      try {
+        const normalized = await normalisiereAusrichtungBild(appState.calibration, appState.processedCanvas);
+        if (requestId !== appState.ocrRequestId) {
+          return;
+        }
+        appState.outputOcrWords = normalized.ocrWordsFinal || [];
+        appState.outputOcrNormalWords = normalized.ocrWordsNormal || [];
+        appState.outputOcrMirroredWords = normalized.ocrWordsMirrored || [];
+        appState.outputMirrored = Boolean(normalized.gespiegelt);
+      } catch {
+        if (requestId !== appState.ocrRequestId) {
+          return;
+        }
+        appState.outputOcrWords = [];
+        appState.outputOcrNormalWords = [];
+        appState.outputOcrMirroredWords = [];
+        appState.outputMirrored = null;
+      } finally {
+        if (requestId !== appState.ocrRequestId) {
+          return;
+        }
+        appState.ocrBusy = false;
+        updateMetrics();
+      }
     }
 
     async function erzeugeA4Pdf(cal, imageCanvas) {
@@ -1956,15 +1996,16 @@
       distanzWert.textContent = "0-12 cm Distanz (px): " + c.pixelDist.toFixed(2);
       auflWert.textContent = "Berechnete Auflösung: " + c.pxProMm.toFixed(4) + " px/mm";
       groesseWert.textContent = "Bildgröße bei 1:1: " + c.imageBreiteMm.toFixed(2) + " mm × " + c.imageHoeheMm.toFixed(2) + " mm";
+      const busyText = appState.ocrBusy ? "läuft ..." : "-";
       const wordsNormal = appState.outputOcrNormalWords && appState.outputOcrNormalWords.length
         ? appState.outputOcrNormalWords.join(", ")
-        : "-";
+        : busyText;
       const wordsMirrored = appState.outputOcrMirroredWords && appState.outputOcrMirroredWords.length
         ? appState.outputOcrMirroredWords.join(", ")
-        : "-";
+        : busyText;
       const words = appState.outputOcrWords && appState.outputOcrWords.length
         ? appState.outputOcrWords.join(", ")
-        : "-";
+        : busyText;
       ocrNormalWert.textContent = "OCR (Normal): " + wordsNormal;
       ocrMirroredWert.textContent = "OCR (Gespiegelt): " + wordsMirrored;
       ocrWert.textContent = "OCR (Final-Ausgabe): " + words;
@@ -1980,6 +2021,8 @@
       appState.outputOcrNormalWords = [];
       appState.outputOcrMirroredWords = [];
       appState.outputMirrored = null;
+      appState.ocrBusy = false;
+      appState.ocrRequestId += 1;
       manualNote.style.display = "none";
       setAutoAlarm(false);
       setBusy(false);
