@@ -452,7 +452,6 @@
           <div class="metric" id="groesseWert">Bildgröße bei 1:1: -</div>
           <div class="metric" id="ocrNormalWert">OCR (Normal): -</div>
           <div class="metric" id="ocrMirroredWert">OCR (Gespiegelt): -</div>
-          <div class="metric" id="ocrWert">OCR (Final-Ausgabe): -</div>
         </div>
         </details>
       </div>
@@ -495,7 +494,6 @@
     const DRUCKRAND_MM = 10;
     const WEISS_THRESH = 246;
     const OCR_KEYWORDS = ["datum", "coloplast", "stoma", "messschablone", "name"];
-    const OCR_FALLBACK_DISPLAY = ["datum", "coloplast", "stoma", "messschablone", "name"];
 
     const ocrMirrorCache = new Map();
 
@@ -521,7 +519,6 @@
     const groesseWert = document.getElementById("groesseWert");
     const ocrNormalWert = document.getElementById("ocrNormalWert");
     const ocrMirroredWert = document.getElementById("ocrMirroredWert");
-    const ocrWert = document.getElementById("ocrWert");
 
     const appState = {
       cvBereit: false,
@@ -534,7 +531,6 @@
       manuellePunkte: [],
       drag: { active: false, mode: null, last: null },
       alarmAktiv: false,
-      outputOcrWords: [],
       outputOcrNormalWords: [],
       outputOcrMirroredWords: [],
       outputMirrored: null,
@@ -1285,7 +1281,6 @@
         if (requestId !== appState.ocrRequestId) {
           return;
         }
-        appState.outputOcrWords = normalized.ocrWordsFinal || [];
         appState.outputOcrNormalWords = normalized.ocrWordsNormal || [];
         appState.outputOcrMirroredWords = normalized.ocrWordsMirrored || [];
         appState.outputMirrored = Boolean(normalized.gespiegelt);
@@ -1293,7 +1288,6 @@
         if (requestId !== appState.ocrRequestId) {
           return;
         }
-        appState.outputOcrWords = [];
         appState.outputOcrNormalWords = [];
         appState.outputOcrMirroredWords = [];
         appState.outputMirrored = null;
@@ -1362,7 +1356,6 @@
       const trimmed = trimmeWeisseRaender(normalized.canvas, WEISS_THRESH);
       let quelle = trimmed.canvas;
 
-      appState.outputOcrWords = normalized.ocrWordsFinal || [];
       appState.outputOcrNormalWords = normalized.ocrWordsNormal || [];
       appState.outputOcrMirroredWords = normalized.ocrWordsMirrored || [];
       appState.outputMirrored = Boolean(normalized.gespiegelt);
@@ -1763,10 +1756,10 @@
     }
 
     function baueOcrAnzeigewoerter(evalResult) {
-      if (evalResult && Array.isArray(evalResult.words) && evalResult.words.length) {
-        return [...new Set(evalResult.words)].slice(0, 8);
+      if (evalResult && Array.isArray(evalResult.displayWords) && evalResult.displayWords.length) {
+        return [...new Set(evalResult.displayWords)].slice(0, 8);
       }
-      return OCR_FALLBACK_DISPLAY.slice();
+      return [];
     }
 
     function extrahiereOcrRohWoerter(normText) {
@@ -1986,7 +1979,6 @@
         groesseWert.textContent = "Bildgröße bei 1:1: -";
         ocrNormalWert.textContent = "OCR (Normal): -";
         ocrMirroredWert.textContent = "OCR (Gespiegelt): -";
-        ocrWert.textContent = "OCR (Final-Ausgabe): -";
         return;
       }
 
@@ -2003,12 +1995,8 @@
       const wordsMirrored = appState.outputOcrMirroredWords && appState.outputOcrMirroredWords.length
         ? appState.outputOcrMirroredWords.join(", ")
         : busyText;
-      const words = appState.outputOcrWords && appState.outputOcrWords.length
-        ? appState.outputOcrWords.join(", ")
-        : busyText;
       ocrNormalWert.textContent = "OCR (Normal): " + wordsNormal;
       ocrMirroredWert.textContent = "OCR (Gespiegelt): " + wordsMirrored;
-      ocrWert.textContent = "OCR (Final-Ausgabe): " + words;
     }
 
     function resetStateForNewFile() {
@@ -2017,7 +2005,6 @@
       appState.manuellAktiv = false;
       appState.manuellePunkte = [];
       appState.drag = { active: false, mode: null, last: null };
-      appState.outputOcrWords = [];
       appState.outputOcrNormalWords = [];
       appState.outputOcrMirroredWords = [];
       appState.outputMirrored = null;
