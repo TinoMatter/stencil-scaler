@@ -450,6 +450,7 @@
           <div class="metric" id="distanzWert">0-12 cm Distanz (px): -</div>
           <div class="metric" id="auflWert">Berechnete Auflösung: -</div>
           <div class="metric" id="groesseWert">Bildgröße bei 1:1: -</div>
+          <div class="metric" id="ocrWert">OCR (Final-Ausgabe): -</div>
         </div>
         </details>
       </div>
@@ -491,7 +492,7 @@
     const A4_HOEHE_MM = 297;
     const DRUCKRAND_MM = 10;
     const WEISS_THRESH = 246;
-    const OCR_KEYWORDS = ["datum", "coloplast", "stoma", "messschablone", "messschablonen", "name"];
+    const OCR_KEYWORDS = ["datum", "coloplast", "stoma", "messschablone", "name"];
 
     const ocrMirrorCache = new Map();
 
@@ -515,6 +516,7 @@
     const distanzWert = document.getElementById("distanzWert");
     const auflWert = document.getElementById("auflWert");
     const groesseWert = document.getElementById("groesseWert");
+    const ocrWert = document.getElementById("ocrWert");
 
     const appState = {
       cvBereit: false,
@@ -527,6 +529,8 @@
       manuellePunkte: [],
       drag: { active: false, mode: null, last: null },
       alarmAktiv: false,
+      outputOcrWords: [],
+      outputMirrored: null,
     };
 
     const cvReadyPromise = waitForOpenCv();
@@ -1311,6 +1315,10 @@
       const trimmed = trimmeWeisseRaender(normalized.canvas, WEISS_THRESH);
       let quelle = trimmed.canvas;
 
+      appState.outputOcrWords = normalized.ocrWordsFinal || [];
+      appState.outputMirrored = Boolean(normalized.gespiegelt);
+      updateMetrics();
+
       let pxProMm = Number(cal && cal.pxProMm);
       if (!Number.isFinite(pxProMm) || pxProMm <= 0) {
         const breiteMm = Number(cal && cal.imageBreiteMm);
@@ -1444,13 +1452,13 @@
 
     async function normalisiereAusrichtungBild(cal, imageCanvas) {
       if (!cal || !cal.p0 || !cal.p12) {
-        return { canvas: imageCanvas, gespiegelt: false };
+        return { canvas: imageCanvas, gespiegelt: false, ocrWordsFinal: [] };
       }
 
       const dx = cal.p12.x - cal.p0.x;
       const dy = cal.p12.y - cal.p0.y;
       if (!Number.isFinite(dx) || !Number.isFinite(dy) || Math.hypot(dx, dy) < 2) {
-        return { canvas: imageCanvas, gespiegelt: false };
+        return { canvas: imageCanvas, gespiegelt: false, ocrWordsFinal: [] };
       }
 
       const rot = rotiereCanvasMitPunkten(imageCanvas, [cal.p0, cal.p12], -Math.atan2(dy, dx));
@@ -1470,9 +1478,12 @@
       const inkHintMirrored = istSpiegelungAnhandSkalenText(arbeitsCanvas, p0, p12);
       const ocrHint = await entscheideSpiegelungMitOcr(arbeitsCanvas, p0, p12);
 
-      const shouldMirror = ocrHint.confident
-        ? ocrHint.shouldMirror
-        : (spiegelungSicher && (endpointReversed || inkHintMirrored));
+      let shouldMirror = false;
+      if (ocrHint.decisive) {
+        shouldMirror = ocrHint.shouldMirror;
+      } else if (!ocrHint.available) {
+        shouldMirror = spiegelungSicher && (endpointReversed || inkHintMirrored);
+      }
 
       if (shouldMirror) {
         const flipH = spiegeleCanvasMitPunkten(arbeitsCanvas, [p0, p12], true, false);
@@ -1480,17 +1491,30 @@
         gespiegelt = true;
       }
 
-      return { canvas: arbeitsCanvas, gespiegelt };
+      const ocrWordsFinal = shouldMirror ? ocrHint.mirroredWords : ocrHint.normalWords;
+      return { canvas: arbeitsCanvas, gespiegelt, ocrWordsFinal };
     }
 
     async function entscheideSpiegelungMitOcr(canvas, p0, p12) {
       if (!window.Tesseract || typeof window.Tesseract.recognize !== "function") {
-        return { confident: false, shouldMirror: false };
+        return {
+          available: false,
+          decisive: false,
+          shouldMirror: false,
+          normalWords: [],
+          mirroredWords: [],
+        };
       }
 
       const roi = holeTextRoiUnterLineal(canvas, p0, p12);
       if (!roi) {
-        return { confident: false, shouldMirror: false };
+        return {
+          available: true,
+          decisive: false,
+          shouldMirror: false,
+          normalWords: [],
+          mirroredWords: [],
+        };
       }
 
       const key = berechneRoiFingerprint(roi);
@@ -1505,18 +1529,28 @@
           leseTextMitOcr(mirrored),
         ]);
 
-        const normalScore = bewerteKeywordTreffer(normalText);
-        const mirroredScore = bewerteKeywordTreffer(mirroredText);
-        const diff = mirroredScore - normalScore;
+        const normalEval = bewerteKeywordTreffer(normalText);
+        const mirroredEval = bewerteKeywordTreffer(mirroredText);
 
         const result = {
-          confident: Math.max(normalScore, mirroredScore) >= 2 && Math.abs(diff) >= 2,
-          shouldMirror: diff >= 2,
+          available: true,
+          decisive:
+            (mirroredEval.score >= normalEval.score + 2 && mirroredEval.words.length >= 2) ||
+            (normalEval.score >= mirroredEval.score + 2 && normalEval.words.length >= 2),
+          shouldMirror: mirroredEval.score >= normalEval.score + 2 && mirroredEval.words.length >= 2,
+          normalWords: normalEval.words,
+          mirroredWords: mirroredEval.words,
         };
         ocrMirrorCache.set(key, result);
         return result;
       } catch {
-        return { confident: false, shouldMirror: false };
+        return {
+          available: true,
+          decisive: false,
+          shouldMirror: false,
+          normalWords: [],
+          mirroredWords: [],
+        };
       }
     }
 
@@ -1560,7 +1594,7 @@
     }
 
     function bewerteKeywordTreffer(text) {
-      if (!text) return 0;
+      if (!text) return { score: 0, words: [] };
       const norm = text
         .toLowerCase()
         .replace(/\r?\n/g, " ")
@@ -1568,19 +1602,19 @@
         .replace(/\s+/g, " ")
         .trim();
 
-      if (!norm) return 0;
+      if (!norm) return { score: 0, words: [] };
 
-      let score = 0;
-      for (const kw of OCR_KEYWORDS) {
-        if (norm.includes(kw)) {
-          score += 3;
-          continue;
-        }
-        if (kw === "messschablone" && norm.includes("mess") && norm.includes("schabl")) {
-          score += 2;
-        }
+      const words = [];
+      if (/\bdatum\b/.test(norm)) words.push("datum");
+      if (/\bcoloplast\b/.test(norm)) words.push("coloplast");
+      if (/\bstoma\b/.test(norm)) words.push("stoma");
+      if (/\bname\b/.test(norm)) words.push("name");
+      if (/\bmess\s*schablon[a-z]*\b/.test(norm) || /\bmessschablon[a-z]*\b/.test(norm)) {
+        words.push("messschablone");
       }
-      return score;
+
+      const unique = [...new Set(words.filter((w) => OCR_KEYWORDS.includes(w)))];
+      return { score: unique.length, words: unique };
     }
 
     function spiegeleCanvasHorizontal(canvas) {
@@ -1785,6 +1819,7 @@
         distanzWert.textContent = "0-12 cm Distanz (px): -";
         auflWert.textContent = "Berechnete Auflösung: -";
         groesseWert.textContent = "Bildgröße bei 1:1: -";
+        ocrWert.textContent = "OCR (Final-Ausgabe): -";
         return;
       }
 
@@ -1794,6 +1829,10 @@
       distanzWert.textContent = "0-12 cm Distanz (px): " + c.pixelDist.toFixed(2);
       auflWert.textContent = "Berechnete Auflösung: " + c.pxProMm.toFixed(4) + " px/mm";
       groesseWert.textContent = "Bildgröße bei 1:1: " + c.imageBreiteMm.toFixed(2) + " mm × " + c.imageHoeheMm.toFixed(2) + " mm";
+      const words = appState.outputOcrWords && appState.outputOcrWords.length
+        ? appState.outputOcrWords.join(", ")
+        : "-";
+      ocrWert.textContent = "OCR (Final-Ausgabe): " + words;
     }
 
     function resetStateForNewFile() {
@@ -1802,6 +1841,8 @@
       appState.manuellAktiv = false;
       appState.manuellePunkte = [];
       appState.drag = { active: false, mode: null, last: null };
+      appState.outputOcrWords = [];
+      appState.outputMirrored = null;
       manualNote.style.display = "none";
       setAutoAlarm(false);
       setBusy(false);
