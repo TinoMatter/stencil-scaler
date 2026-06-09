@@ -1,0 +1,20 @@
+# Python / Env
+venv/
+__pycache__/
+.env
+
+# MacOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Project Specific (Sensitive Data & Tests)
+01_Schablonen_Vorlagen_für_Tests/
+dataset/
+test_outputs/
+scratch/
+stoma_offline_package.zip
+test_results.md
+ruler_ground_truth_backup.json
