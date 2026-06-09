@@ -11,7 +11,7 @@ __pycache__/
 .vscode/
 
 # Project Specific (Sensitive Data & Tests)
-01_Schablonen_Vorlagen_für_Tests/
+01_Schablonen_Vorlagen_f*
 dataset/
 test_outputs/
 scratch/
