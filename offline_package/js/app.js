@@ -134,6 +134,8 @@ dateiInput.addEventListener("change", async (event) => {
   try {
     resetStateForNewFile();
     setStatus("Datei wird geladen ...");
+    setBusy(true, "Datei wird geladen ...");
+    await new Promise(r => setTimeout(r, 10));
 
     appState.sourceName = file.name;
     const source = await loadFileAsSource(file);
@@ -150,9 +152,12 @@ dateiInput.addEventListener("change", async (event) => {
 
     if (appState.cvReady) {
       await startAutoDetection();
+    } else {
+      setBusy(false);
     }
   } catch (err) {
     setStatus("Fehler beim Laden: " + err.message, true);
+    setBusy(false);
   }
 });
 
@@ -223,6 +228,10 @@ previewCanvas.addEventListener("mousemove", (event) => {
 
   if (!appState.calibration || appState.manualActive) {
     previewCanvas.style.cursor = appState.manualActive ? "crosshair" : "default";
+    if (appState.manualActive) {
+      appState.manualHover = p;
+      drawCurrentPreview();
+    }
     return;
   }
 
@@ -269,6 +278,10 @@ window.addEventListener("mouseup", () => {
 previewCanvas.addEventListener("mouseleave", () => {
   if (!appState.drag.active) {
     previewCanvas.style.cursor = appState.manualActive ? "crosshair" : "default";
+  }
+  if (appState.manualActive) {
+    appState.manualHover = null;
+    drawCurrentPreview();
   }
 });
 
@@ -636,31 +649,34 @@ function drawBaseCanvas(canvas) {
 }
 
 function drawCurrentPreview() {
-  if (!appState.processedCanvas || !appState.calibration) {
+  if (!appState.processedCanvas || (!appState.calibration && !appState.manualActive)) {
     if (appState.sourceCanvas) drawBaseCanvas(appState.sourceCanvas);
     return;
   }
 
   drawBaseCanvas(appState.processedCanvas);
-  const { p0, p12 } = appState.calibration;
-  const color = appState.calibration.overlayColor || (appState.calibration.lineReliable ? "#00a651" : "#d97706");
 
-  previewCtx.save();
-  if (!appState.calibration.lineReliable) {
-    previewCtx.setLineDash([10, 7]);
+  if (appState.calibration) {
+    const { p0, p12 } = appState.calibration;
+    const color = appState.calibration.overlayColor || (appState.calibration.lineReliable ? "#00a651" : "#d97706");
+
+    previewCtx.save();
+    if (!appState.calibration.lineReliable) {
+      previewCtx.setLineDash([10, 7]);
+    }
+    previewCtx.strokeStyle = color;
+    previewCtx.fillStyle = color;
+    previewCtx.lineWidth = Math.max(1.5, previewCanvas.width / 800);
+    previewCtx.beginPath();
+    previewCtx.moveTo(p0.x, p0.y);
+    previewCtx.lineTo(p12.x, p12.y);
+    previewCtx.stroke();
+    previewCtx.setLineDash([]);
+
+    drawEndpointMarker(previewCtx, p0, p12, color);
+    drawEndpointMarker(previewCtx, p12, p0, color);
+    previewCtx.restore();
   }
-  previewCtx.strokeStyle = color;
-  previewCtx.fillStyle = color;
-  previewCtx.lineWidth = Math.max(1.5, previewCanvas.width / 800);
-  previewCtx.beginPath();
-  previewCtx.moveTo(p0.x, p0.y);
-  previewCtx.lineTo(p12.x, p12.y);
-  previewCtx.stroke();
-  previewCtx.setLineDash([]);
-
-  drawEndpointMarker(previewCtx, p0, p12, color);
-  drawEndpointMarker(previewCtx, p12, p0, color);
-  previewCtx.restore();
 
 
 
@@ -670,9 +686,17 @@ function drawCurrentPreview() {
     zeichnePunkt(previewCtx, p.x, p.y, 7);
   }
 
-  // Draw magnifying circle when dragging ruler endpoints p0 or p12
-  if (appState.drag && appState.drag.active && (appState.drag.mode === "p0" || appState.drag.mode === "p12")) {
-    const dragPoint = appState.drag.mode === "p0" ? p0 : p12;
+  const isDragging = appState.drag && appState.drag.active && (appState.drag.mode === "p0" || appState.drag.mode === "p12");
+  const isHoveringManual = appState.manualActive && appState.manualHover;
+
+  // Draw magnifying circle when dragging ruler endpoints p0 or p12 or hovering manually
+  if (isDragging || isHoveringManual) {
+    let dragPoint;
+    if (isDragging) {
+      dragPoint = appState.drag.mode === "p0" ? appState.calibration.p0 : appState.calibration.p12;
+    } else {
+      dragPoint = appState.manualHover;
+    }
     const magRadius = 100;
     const zoom = 2.5;
     
@@ -789,6 +813,7 @@ function resetStateForNewFile() {
   appState.processedCanvas = null;
   appState.manualActive = false;
   appState.manualPoints = [];
+  appState.manualHover = null;
   appState.drag = { active: false, mode: null, last: null };
   appState.outputOcrNormalWords = [];
   appState.outputOcrMirroredWords = [];
