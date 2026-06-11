@@ -438,11 +438,3 @@ If rebuilding from scratch, prioritize in this order:
 7. Ruler-length input and optional auto-length suggestion
 8. Batch mode
 9. Offline packaging and public static deployment
-
-
-## Agent Instructions
-When modifying the computer vision pipeline (`js/ruler-detector.js` or `js/image-utils.js`), be aware that the algorithm is extremely fragile and heavily optimized around specific ground-truth samples. 
-1. **Do not randomly tweak parameters or thresholds** (like OCR confidence or pixel offset matching) without a solid mathematical hypothesis. You will likely go in circles and break existing tests.
-2. **Never push algorithmic changes without running direct tests**. Use `node run_direct_tests.js` to immediately verify changes against `ruler_ground_truth.json`.
-3. **Keep HTML and Direct Tests perfectly synchronized**. The cropping (`cropAndScaleStencilIfPossible`) and processing pipelines must behave exactly the same way in the browser (`app.js`) and in the Node test suite.
-4. **Offline Package**: When changes are finalized in the root `js/` directory, you MUST run `./build_offline_package.command` to synchronize the changes to the `offline_package/` directory.

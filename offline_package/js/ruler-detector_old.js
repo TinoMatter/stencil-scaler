@@ -372,7 +372,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       pxPerMm_candidate = roughPxPerMm;
     }
 
-    const isDebugStencil1 = (orientation === "horizontal" && centers.some(c => Math.abs(c - 1716.77) < 15));
+    const isDebugStencil1 = false;
     const candidatesL = [100, 120];
     for (const tryL of candidatesL) {
       if (pxPerMm_candidate <= 0) continue;
@@ -1129,7 +1129,7 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
     let skippedByDrift = false;
     if (Number.isFinite(seedStart)) {
       const drift = Math.abs(start - seedStart);
-      const maxAllowedDrift = hasOcr ? (majorPx * 1.5) : (mmPx * 2.5);
+      const maxAllowedDrift = hasOcr ? (mmPx * 4.5) : (majorPx * 1.2);
       if (drift > maxAllowedDrift) skippedByDrift = true;
     }
     const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
@@ -1890,6 +1890,7 @@ function detect(mat, sourceMeta, rulerLengthMm) {
         p12: refined.p12,
         method: refined.method,
         reliable: refined.reliable || matchCount >= 2,
+        baseScore: refined.score,
         score: refined.score + (matchCount * 500),
         detectedLengthMm: refined.detectedLengthMm,
         ocrDigits: refined.ocrDigits,
@@ -1904,8 +1905,8 @@ function detect(mat, sourceMeta, rulerLengthMm) {
 
     refinedCandidates.sort((a, b) => {
       // 1. If one candidate has a massively higher base score (e.g. > 200 diff), it wins regardless of OCR noise
-      if (Math.abs(a.score - b.score) > 200) {
-        return b.score - a.score;
+      if (Math.abs(a.baseScore - b.baseScore) > 200) {
+        return b.baseScore - a.baseScore;
       }
 
       // 2. Prefer candidate with more OCR matched digits (if >= 2)

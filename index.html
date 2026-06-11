@@ -447,8 +447,8 @@
       <div class="section">
         <h2>3) Ausgabe</h2>
         <div class="control-row">
-          <button id="downloadBtn" class="btn-secondary" disabled>A4-PDF herunterladen</button>
-          <button id="printBtn" class="btn-secondary" disabled>A4-PDF direkt drucken</button>
+          <button id="downloadBtn" class="btn-secondary" disabled>Zip-Bundle herunterladen</button>
+          <button id="printBtn" class="btn-secondary" style="display:none;" disabled>A4-PDF direkt drucken</button>
         <div class="warning">Beim Drucken zwingend "Tatsächliche Größe" oder "Maßstab 100%" wählen.</div>
       </div>
 
@@ -492,12 +492,14 @@
     </section>
   </main>
 
+  <script src="vendor/jszip.min.js"></script>
   <script src="vendor/pdf.min.js"></script>
   <script src="vendor/pdf-lib.min.js"></script>
   <script src="vendor/opencv.js"></script>
   <script src="js/image-utils.js"></script>
   <script src="js/ruler-detector.js"></script>
   <script src="js/pdf-generator.js"></script>
+  <script src="js/gui_pipeline.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

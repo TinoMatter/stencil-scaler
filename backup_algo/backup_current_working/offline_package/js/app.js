@@ -59,23 +59,6 @@ const appState = {
 };
 window.appState = appState;
 
-function detectExpectedRulerLengthFromFilename(filename) {
-  if (!filename) return 12;
-  const lower = filename.toLowerCase();
-  if (lower.includes("publicare") || lower.includes("0-10") || lower.includes("spontantest") || lower.includes("spontan_test")) {
-    return 10;
-  }
-  const match = lower.match(/(?:^|\D)(\d+)(?:\.[^.]+)?$/) || lower.match(/(\d+)/);
-  if (match) {
-    const num = parseInt(match[1], 10);
-    if ([1, 2, 3, 4, 5, 16].includes(num)) {
-      return 10;
-    }
-  }
-  return 12;
-}
-window.detectExpectedRulerLengthFromFilename = detectExpectedRulerLengthFromFilename;
-
 function getRulerLengthCm() {
   if (rulerLengthInput && rulerLengthInput.value === "custom") {
     return parseFloat(rulerLengthCustomInput.value) || 12;
@@ -155,11 +138,6 @@ dateiInput.addEventListener("change", async (event) => {
     await new Promise(r => setTimeout(r, 10));
 
     appState.sourceName = file.name;
-    appState.originalFile = file;
-    const autoLen = detectExpectedRulerLengthFromFilename(file.name);
-    rulerLengthInput.value = String(autoLen);
-    updateRulerLengthUi();
-
     const source = await loadFileAsSource(file);
     appState.sourceCanvas = source.canvas;
     appState.sourceMeta = source.sourceMeta;
@@ -341,9 +319,82 @@ previewCanvas.addEventListener("click", (event) => {
   setStatus("Manuelle Kalibrierung übernommen. Ausgabe ist bereit.");
 });
 
-// Automatic Training Data & Ground Truth Unified Upload Logic
-async function autoSaveCalibration() {
-  // Disabled: OneDrive / Offline bundle generation is now handled via ZIP download directly.
+// Automatic Training Data & Ground Truth Upload Logic
+async function autoSendTrainingData() {
+  if (!appState.calibration || !appState.processedCanvas || !appState.sourceName) {
+    return;
+  }
+
+  appState.processedCanvas.toBlob(async (blob) => {
+    if (!blob) {
+      console.error("autoSendTrainingData: Failed to create image blob");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", blob, appState.sourceName.replace(/\.pdf$/i, ".jpg"));
+    formData.append("original_width", appState.processedCanvas.width);
+    formData.append("original_height", appState.processedCanvas.height);
+    formData.append("point_0cm", JSON.stringify([
+      parseFloat(appState.calibration.p0.x.toFixed(2)),
+      parseFloat(appState.calibration.p0.y.toFixed(2))
+    ]));
+    formData.append("point_12cm", JSON.stringify([
+      parseFloat(appState.calibration.p12.x.toFixed(2)),
+      parseFloat(appState.calibration.p12.y.toFixed(2))
+    ]));
+
+    try {
+      console.log("autoSendTrainingData: Sending training data to API...");
+      const response = await fetch("http://localhost:8080/api/collect-training-data", {
+        method: "POST",
+        body: formData
+      });
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error("autoSendTrainingData: Error response:", errText || response.statusText);
+      } else {
+        const resData = await response.json();
+        console.log("autoSendTrainingData: Success! UUID:", resData.uuid);
+      }
+    } catch (err) {
+      console.error("autoSendTrainingData: Fetch error:", err.message);
+    }
+  }, "image/jpeg", 0.9);
+}
+
+async function autoSaveGroundTruth() {
+  if (!appState.calibration || !appState.processedCanvas || !appState.sourceName) {
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append("filename", appState.sourceName);
+  formData.append("point_0cm", JSON.stringify([
+    parseFloat(appState.calibration.p0.x.toFixed(2)),
+    parseFloat(appState.calibration.p0.y.toFixed(2))
+  ]));
+  formData.append("point_12cm", JSON.stringify([
+    parseFloat(appState.calibration.p12.x.toFixed(2)),
+    parseFloat(appState.calibration.p12.y.toFixed(2))
+  ]));
+  formData.append("ruler_length_mm", appState.calibration.detectedLengthMm || 120);
+
+  try {
+    console.log("autoSaveGroundTruth: Saving ground truth to API...");
+    const response = await fetch("http://localhost:8080/api/save-ground-truth", {
+      method: "POST",
+      body: formData
+    });
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("autoSaveGroundTruth: Error response:", errText || response.statusText);
+    } else {
+      console.log("autoSaveGroundTruth: Ground truth updated successfully in project file!");
+    }
+  } catch (err) {
+    console.error("autoSaveGroundTruth: Fetch error:", err.message);
+  }
 }
 
 printBtn.addEventListener("click", async () => {
@@ -365,43 +416,24 @@ printBtn.addEventListener("click", async () => {
 });
 
 downloadBtn.addEventListener("click", async () => {
-  if (!appState.calibration || !appState.processedCanvas || !appState.originalFile) {
-    setStatus("Bitte zuerst Erkennung durchführen.", true);
+  if (!appState.calibration || !appState.processedCanvas) {
+    setStatus("Please run detection first.", true);
     return;
   }
 
   try {
     downloadBtn.disabled = true;
-    setStatus("Zip-Archiv wird erstellt ...");
-
-    // 1. Generate PDF
-    const pdfBlob = await generateA4Pdf(appState.calibration, appState.processedCanvas);
+    setStatus("A4-PDF wird erstellt ...");
     
-    // 2. Generate JSON Ground Truth
-    const jsonStr = JSON.stringify({
-      filename: appState.sourceName,
-      original_width: appState.processedCanvas.width,
-      original_height: appState.processedCanvas.height,
-      p0: { x: parseFloat(appState.calibration.p0.x.toFixed(2)), y: parseFloat(appState.calibration.p0.y.toFixed(2)) },
-      p12: { x: parseFloat(appState.calibration.p12.x.toFixed(2)), y: parseFloat(appState.calibration.p12.y.toFixed(2)) },
-      rulerLengthMm: appState.calibration.detectedLengthMm || 120,
-      method: appState.calibration.method
-    }, null, 2);
+    // Automatically trigger saving training data and ground truth
+    autoSendTrainingData();
+    autoSaveGroundTruth();
 
-    // 3. Create Zip Bundle
-    const zip = new JSZip();
-    const baseName = filenameWithoutExtension(appState.sourceName);
-    
-    zip.file(appState.originalFile.name, appState.originalFile);
-    zip.file(`${baseName}_scaled.pdf`, pdfBlob);
-    zip.file(`${baseName}_ground_truth.json`, jsonStr);
-
-    const zipBlob = await zip.generateAsync({ type: "blob" });
-    await ladeBlobHerunter(zipBlob, `${baseName}_bundle.zip`);
-    
-    setStatus("Zip-Archiv erfolgreich erstellt und heruntergeladen.");
+    const blob = await generateA4Pdf(appState.calibration, appState.processedCanvas);
+    await ladeBlobHerunter(blob, filenameWithoutExtension(appState.sourceName) + " scaled.pdf");
+    setStatus("PDF erfolgreich erstellt.");
   } catch (err) {
-    setStatus("Fehler bei Zip-Erstellung: " + err.message, true);
+    setStatus("Fehler bei PDF-Erstellung: " + err.message, true);
   } finally {
     downloadBtn.disabled = false;
   }
@@ -447,24 +479,27 @@ batchBtn.addEventListener("click", async () => {
 async function autoDetectFromSource(sourceCanvas, sourceMeta) {
   await cvReadyPromise;
 
-  const rulerLengthMm = getRulerLengthMm();
-  let baseMat, flippedMat, angleDeg = 0;
-
-  // Always apply GUI Crop→Deskew→Rotate preprocessing for all image types
-  const prep = await prepareImageForDetection(sourceCanvas, sourceMeta);
-  sourceCanvas = prep.canvas;
-  appState.sourceCanvas = prep.canvas;
-  drawBaseCanvas(prep.canvas);
-  baseMat = prep.baseMat;
-  flippedMat = prep.flippedMat;
-  angleDeg = prep.angle || 0;
-
-  if (appState.abortActive) {
-    if (baseMat) baseMat.delete();
-    if (flippedMat) flippedMat.delete();
-    throw new Error("Erkennung abgebrochen");
+  const isPdf = sourceMeta && sourceMeta.isPdf;
+  if (!isPdf) {
+    const croppedCanvas = await cropAndScaleStencilIfPossible(sourceCanvas);
+    if (croppedCanvas !== sourceCanvas) {
+      sourceCanvas = croppedCanvas;
+      appState.sourceCanvas = croppedCanvas;
+      drawBaseCanvas(croppedCanvas);
+    }
   }
 
+  if (appState.abortActive) throw new Error("Erkennung abgebrochen");
+
+  const src = cv.imread(sourceCanvas);
+  const deskewRes = deskew(src);
+  src.delete();
+
+  const baseMat = deskewRes.mat;
+  const flippedMat = new cv.Mat();
+  cv.rotate(baseMat, flippedMat, cv.ROTATE_180);
+
+  const rulerLengthMm = getRulerLengthMm();
   const candidates = [];
 
   const tryDetect = (mat, label) => {
@@ -489,14 +524,6 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
   candidates.sort((a, b) => {
     const da = a.detection;
     const db = b.detection;
-
-    if (da.reliable && !db.reliable) return -1;
-    if (!da.reliable && db.reliable) return 1;
-
-    if (Math.abs(da.score - db.score) > 200) {
-      return db.score - da.score;
-    }
-
     const ma = da.ocrDigits ? da.ocrDigits.filter(d => d.matched).length : 0;
     const mb = db.ocrDigits ? db.ocrDigits.filter(d => d.matched).length : 0;
     if (ma !== mb) return mb - ma;
@@ -505,7 +532,9 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
     const bMatchesHint = (db.detectedLengthMm === rulerLengthMm);
     if (aMatchesHint && !bMatchesHint) return -1;
     if (!aMatchesHint && bMatchesHint) return 1;
-    
+
+    if (da.reliable && !db.reliable) return -1;
+    if (!da.reliable && db.reliable) return 1;
     const aIsTick = da.method && da.method.includes("Tick-Cluster");
     const bIsTick = db.method && db.method.includes("Tick-Cluster");
     if (aIsTick && !bIsTick) return -1;
@@ -525,7 +554,7 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
     p12: best.detection.p12,
     method: best.label + best.detection.method,
     lineReliable: Boolean(best.detection.reliable),
-    angleDeg: angleDeg,
+    angleDeg: deskewRes.angle || 0,
     detectedLengthMm: best.detection.detectedLengthMm || rulerLengthMm,
     ocrWordsNormal: [],
     ocrWordsMirrored: [],
@@ -662,9 +691,9 @@ function drawCurrentPreview() {
     
     // Scale tick marks proportionally to canvas size so they are beautifully visible
     const maxDim = Math.max(previewCanvas.width, previewCanvas.height);
-    const cmLen = Math.max(20, Math.round(maxDim / 80)); // 1 cm tick length
+    const cmLen = Math.max(12, Math.round(maxDim / 100)); // 1 cm tick length
     const halfCmLen = Math.round(cmLen * 0.7);
-    const mmLen = Math.round(cmLen * 0.45);
+    const mmLen = Math.round(cmLen * 0.4);
     
     const origWidth = previewCtx.lineWidth;
     
@@ -673,14 +702,14 @@ function drawCurrentPreview() {
       const isHalfCm = (i % 5 === 0 && !isCm);
       
       let tickLength = mmLen;
-      let tickWidth = Math.max(2, origWidth * 0.8);
+      let tickWidth = Math.max(1, origWidth * 0.5);
       
       if (isCm) {
         tickLength = cmLen;
-        tickWidth = Math.max(5, origWidth * 1.8);
+        tickWidth = Math.max(1.5, origWidth * 1.2);
       } else if (isHalfCm) {
         tickLength = halfCmLen;
-        tickWidth = Math.max(3.5, origWidth * 1.3);
+        tickWidth = Math.max(1.2, origWidth * 0.8);
       }
       
       const pxOffset = i * pxPerMm;
@@ -733,9 +762,9 @@ function drawCurrentPreview() {
         const pxPerMm = len / snapMm;
 
         const maxDim = Math.max(previewCanvas.width, previewCanvas.height);
-        const cmLen = Math.max(20, Math.round(maxDim / 80));
+        const cmLen = Math.max(12, Math.round(maxDim / 100));
         const halfCmLen = Math.round(cmLen * 0.7);
-        const mmLen = Math.round(cmLen * 0.45);
+        const mmLen = Math.round(cmLen * 0.4);
 
         const origWidth = previewCtx.lineWidth;
 
@@ -744,14 +773,14 @@ function drawCurrentPreview() {
           const isHalfCm = (i % 5 === 0 && !isCm);
 
           let tickLength = mmLen;
-          let tickWidth = Math.max(2, origWidth * 0.8);
+          let tickWidth = Math.max(1, origWidth * 0.5);
 
           if (isCm) {
             tickLength = cmLen;
-            tickWidth = Math.max(5, origWidth * 1.8);
+            tickWidth = Math.max(1.5, origWidth * 1.2);
           } else if (isHalfCm) {
             tickLength = halfCmLen;
-            tickWidth = Math.max(3.5, origWidth * 1.3);
+            tickWidth = Math.max(1.2, origWidth * 0.8);
           }
 
           const pxOffset = i * pxPerMm;
@@ -784,12 +813,20 @@ function drawCurrentPreview() {
     const magRadius = 100;
     const zoom = 2.5;
     
-    const margin = 10;
-    const offsetY = 140;
-    // Compute and clamp magnifier center to remain fully inside canvas
-    let magX = Math.min(Math.max(dragPoint.x, magRadius + margin), previewCanvas.width - magRadius - margin);
-    let magY = dragPoint.y - offsetY;
-    magY = Math.min(Math.max(magY, magRadius + margin), previewCanvas.height - magRadius - margin);
+    // Position of the magnifying glass (shifted upwards so user's cursor doesn't cover it)
+    let magX = dragPoint.x;
+    let magY = dragPoint.y - 140;
+    
+    // Bounds check to keep magnifier visible within the canvas
+    if (magY - magRadius < 10) {
+      // If too close to the top, position it below the drag point instead
+      magY = dragPoint.y + 140;
+    }
+    if (magX - magRadius < 10) {
+      magX = magRadius + 10;
+    } else if (magX + magRadius > previewCanvas.width - 10) {
+      magX = previewCanvas.width - magRadius - 10;
+    }
 
     previewCtx.save();
     
@@ -806,19 +843,13 @@ function drawCurrentPreview() {
 
     // Draw the zoomed-in image
     const srcSize = (magRadius * 2) / zoom;
-    let sx = dragPoint.x - srcSize / 2;
-    let sy = dragPoint.y - srcSize / 2;
-    
-    // Prevent sx/sy from being strictly negative for Safari compat
-    let drawW = srcSize;
-    let drawH = srcSize;
-    let destX = magX - magRadius;
-    let destY = magY - magRadius;
+    const sx = dragPoint.x - srcSize / 2;
+    const sy = dragPoint.y - srcSize / 2;
     
     previewCtx.drawImage(
       appState.processedCanvas,
-      sx, sy, drawW, drawH,
-      destX, destY, magRadius * 2, magRadius * 2
+      sx, sy, srcSize, srcSize,
+      magX - magRadius, magY - magRadius, magRadius * 2, magRadius * 2
     );
 
     // Restore clipping path so we can draw border and crosshair

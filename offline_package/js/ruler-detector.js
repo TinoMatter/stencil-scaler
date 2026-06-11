@@ -318,8 +318,26 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       diffs.push(centers[i] - centers[i-1]);
     }
     let stepMed = median(diffs);
-    const isCmOnly = (centers.length < 45);
-    if (isCmOnly && diffs.length > 0) {
+    let isCmOnly = (centers.length < 45);
+    const roughPxPerMm = expectedSpan ? (expectedSpan / rulerLengthMm) : (span / rulerLengthMm);
+
+    if (expectedSpan && diffs.length > 0) {
+      const rawMed = median(diffs);
+      const err1 = Math.abs(rawMed - roughPxPerMm);
+      const err5 = Math.abs(rawMed - 5 * roughPxPerMm);
+      const err10 = Math.abs(rawMed - 10 * roughPxPerMm);
+
+      if (err10 < err5 && err10 < err1) {
+        stepMed = 10 * roughPxPerMm;
+        isCmOnly = true;
+      } else if (err5 < err10 && err5 < err1) {
+        stepMed = 5 * roughPxPerMm;
+        isCmOnly = true;
+      } else {
+        stepMed = roughPxPerMm;
+        isCmOnly = false;
+      }
+    } else if (isCmOnly && diffs.length > 0) {
       const minCmDiff = span / 16;
       const filteredDiffs = diffs.filter(d => d >= minCmDiff);
       if (filteredDiffs.length > 0) {
@@ -334,10 +352,8 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
     let minErrOverall = Infinity;
     let bestMatchedSpanOverall = 0;
 
-    // Derive px/mm from measured tick spacing by comparing to rough scale of the tick cloud
-    const roughPxPerMm = span / rulerLengthMm;
     let pxPerMm_candidate = roughPxPerMm;
-    if (stepMed > 0) {
+    if (stepMed > 0 && !expectedSpan) {
       if (isCmOnly) {
         // Spacing can be 5mm or 10mm
         const ratio = span / stepMed;
@@ -352,10 +368,11 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
         pxPerMm_candidate = stepMed;
       }
     }
-    if (pxPerMm_candidate < 0.7 * roughPxPerMm || pxPerMm_candidate > 1.3 * roughPxPerMm) {
+    if (!expectedSpan && (pxPerMm_candidate < 0.7 * roughPxPerMm || pxPerMm_candidate > 1.3 * roughPxPerMm)) {
       pxPerMm_candidate = roughPxPerMm;
     }
 
+    const isDebugStencil1 = (orientation === "horizontal" && centers.some(c => Math.abs(c - 1716.77) < 15));
     const candidatesL = [100, 120];
     for (const tryL of candidatesL) {
       if (pxPerMm_candidate <= 0) continue;
@@ -372,6 +389,13 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       let maxMatchesForL = -1;
       let minErrForL = Infinity;
       let bestMatchedSpanForL = 0;
+
+      if (isDebugStencil1) {
+        console.log(`[DEBUG STENCIL 1] isCmOnly=${isCmOnly}, stepMed=${stepMed.toFixed(4)}, centers.length=${centers.length}, span=${span.toFixed(2)}, rulerLengthMm=${rulerLengthMm}`);
+        console.log(`[DEBUG STENCIL 1] roughPxPerMm=${roughPxPerMm.toFixed(4)}, 0.7*rough=${(0.7 * roughPxPerMm).toFixed(4)}, 1.3*rough=${(1.3 * roughPxPerMm).toFixed(4)}`);
+        console.log(`[DEBUG STENCIL 1] pxPerMm_candidate (after validation)=${pxPerMm_candidate.toFixed(4)}`);
+        console.log(`[DEBUG STENCIL 1] centers=${JSON.stringify(centers.map(c => Math.round(c)))}`);
+      }
 
       for (let ai = 0; ai < centers.length; ai += anchorStep) {
         const anchor = centers[ai];
@@ -399,6 +423,10 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
                 matchedIndices.add(idx);
               }
             }
+          }
+
+          if (isDebugStencil1 && (Math.abs(startCandidate - 781.34) < 15 || Math.abs(startCandidate - 866.38) < 15)) {
+            console.log(`  Candidate start=${startCandidate.toFixed(2)} (anchor=${anchor.toFixed(2)}, k0=${k0}): matchCount=${matchCount}, sumMatchErr=${sumMatchErr.toFixed(2)}, indices=[${[...matchedIndices].sort((a,b)=>a-b).join(",")}]`);
           }
 
           if (matchCount > maxMatchesForL || (matchCount === maxMatchesForL && sumMatchErr < minErrForL)) {
@@ -429,6 +457,8 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       const tryLIsPreferred = Math.abs(tryL - rulerLengthMm) < Math.abs(bestL - rulerLengthMm);
       const samePreference = Math.abs(tryL - rulerLengthMm) === Math.abs(bestL - rulerLengthMm);
 
+      const limitRatio = isCmOnly ? 0.22 : 0.08;
+
       let isBetterL = false;
       if (samePreference) {
         // Both equally preferred — use ratio, then error
@@ -438,12 +468,12 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
           isBetterL = minErrForL < minErrOverall;
         }
       } else if (tryLIsPreferred) {
-        // Always prefer the target length if it has at least some match coverage (>= 22%)
+        // Always prefer the target length if it has at least some match coverage (>= limitRatio)
         // If not, allow the alternative length to remain if it was better
-        isBetterL = (ratioForL >= 0.22) || (maxMatchesOverall === -1);
+        isBetterL = (ratioForL >= limitRatio) || (maxMatchesOverall === -1);
       } else {
-        // Only fallback to alternative length if the target length failed to match sufficiently (< 22%)
-        isBetterL = (ratioOverall < 0.22 && ratioForL > ratioOverall + 0.10);
+        // Only fallback to alternative length if the target length failed to match sufficiently (< limitRatio)
+        isBetterL = (ratioOverall < limitRatio && ratioForL > ratioOverall + 0.10);
       }
 
 
@@ -456,6 +486,10 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
         bestStart = bestStartForL;
         bestMatchedSpanOverall = bestMatchedSpanForL;
       }
+    }
+
+    if (isDebugStencil1) {
+      console.log(`[DEBUG STENCIL 1] SELECTED BEFORE REGRESSION: bestL=${bestL}, bestStart=${bestStart.toFixed(2)}, maxMatchesOverall=${maxMatchesOverall}, bestPxPerMm=${bestPxPerMm.toFixed(4)}`);
     }
 
     let start = bestStart;
@@ -540,7 +574,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
     let stepErr = 0;
     if (expectedSpan && candidateExpectedSpan) {
       spanErr = Math.abs(span - candidateExpectedSpan) / Math.max(candidateExpectedSpan, 1);
-      if (spanErr > 0.15) {
+      if (spanErr > 0.22) {
         continue;
       }
       let expectedUnitStep = expectedSpan / rulerLengthMm;
@@ -555,7 +589,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
         }
       }
       stepErr = Math.abs(stepMed - expectedUnitStep) / expectedUnitStep;
-      if (stepErr > 0.15) {
+      if (stepErr > 0.22) {
         continue;
       }
       expectedBonus = Math.max(0, 1 - spanErr) * 80;
@@ -592,6 +626,8 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       group.length >= (isCmOnly ? 8 : 50) &&
       regular >= 0.15 &&
       (!expectedSpan || (spanErr <= 0.18 && stepErr <= 0.15));
+
+
 
     let m = 0;
     let c = center;
@@ -856,7 +892,7 @@ function getScaledTemplates(pxPerMm, heightRatio = 1.8) {
 }
 
 function ocrDigitFromRoi(binMat, rect) {
-  if (rect.width < 5 || rect.height < 8) return null;
+  if (Math.min(rect.width, rect.height) < 4 || Math.max(rect.width, rect.height) > 100) return null;
   const roi = binMat.roi(rect);
   const resized = new cv.Mat();
   try {
@@ -866,22 +902,44 @@ function ocrDigitFromRoi(binMat, rect) {
     const templates = ensureDigitTemplates();
     let best = null;
 
-    for (let i = 0; i < templates.length; i += 1) {
-      const t = templates[i];
-      let inter = 0;
-      let union = 0;
-      for (let p = 0; p < t.data.length; p += 1) {
-        const a = resized.data[p] > 0 ? 1 : 0;
-        const b = t.data[p] > 0 ? 1 : 0;
-        if (a && b) inter += 1;
-        if (a || b) union += 1;
+    const rots = [
+      roi,
+      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_90_CLOCKWISE); return d; })(),
+      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_180); return d; })(),
+      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_90_COUNTERCLOCKWISE); return d; })()
+    ];
+
+    try {
+      for (const r of rots) {
+        cv.resize(r, resized, new cv.Size(28, 44), 0, 0, cv.INTER_AREA);
+        cv.threshold(resized, resized, 120, 255, cv.THRESH_BINARY);
+
+        const rData = resized.data;
+        for (let i = 0; i < templates.length; i += 1) {
+          const t = templates[i];
+          const tData = t.data;
+          const tLen = tData.length;
+          let inter = 0;
+          let union = 0;
+          for (let p = 0; p < tLen; p += 1) {
+            const a = rData[p];
+            const b = tData[p];
+            if (a && b) inter += 1;
+            if (a || b) union += 1;
+          }
+          const score = union > 0 ? inter / union : 0;
+          if (!best || score > best.score) {
+            best = { digit: t.digit, score };
+          }
+        }
       }
-      const score = union > 0 ? inter / union : 0;
-      if (!best || score > best.score) {
-        best = { digit: t.digit, score };
-      }
+    } finally {
+      for (let i = 1; i < rots.length; i++) rots[i].delete();
     }
-    if (!best || best.score < 0.2) return null;
+
+    if (!best || best.score < 0.2) {
+      return null;
+    }
     return best;
   } finally {
     roi.delete();
@@ -965,14 +1023,26 @@ function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
       mad /= starts.length;
 
       const tol = Math.max(16, spanPx * 0.03);
-      const support = starts.filter(s => Math.abs(s - med) <= tol).length;
+      const inliers = starts.filter(s => Math.abs(s - med) <= tol);
+      const support = inliers.length;
       if (support < 2) continue;
 
-      const drift = Number.isFinite(seedStart) ? Math.abs(med - seedStart) : 0;
-      const score = totalScore + support * 1.5 - mad * 0.05 - drift * 0.002;
+      let inlierMad = 0;
+      for (const s of inliers) inlierMad += Math.abs(s - med);
+      inlierMad /= support;
+
+      if (inlierMad > tol * 0.6) continue;
+
+      const expectedStart = dir === 'forward' ? seedStart : len - (seedStart + spanPx);
+      const drift = Number.isFinite(seedStart) ? Math.abs(med - expectedStart) : 0;
+
+      const maxDrift = Math.max(80, spanPx * 0.12);
+      if (Number.isFinite(seedStart) && drift > maxDrift) continue;
+
+      const score = totalScore + support * 1.5 - inlierMad * 0.5 - drift * 0.002;
 
       if (!best || score > best.score) {
-        best = { start: med, sideSign, score, support, mad, shouldFlip: dir === 'backward' };
+        best = { start: med, sideSign, score, support, mad, inlierMad, shouldFlip: dir === 'backward' };
       }
     }
   }
@@ -998,7 +1068,7 @@ function rayDistanceToImageEdge(point, dirX, dirY, cols, rows) {
   return Number.isFinite(best) ? best : 1e9;
 }
 
-function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd) {
+function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, hasOcr = false, filename = '') {
   if (!Number.isFinite(spanPx) || spanPx <= 100 || !Number.isFinite(rulerLengthMm) || rulerLengthMm <= 0) {
     return null;
   }
@@ -1056,18 +1126,32 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
       }
     }
 
+    let skippedByDrift = false;
     if (Number.isFinite(seedStart)) {
       const drift = Math.abs(start - seedStart);
-      if (drift > majorPx * 0.75) continue;
+      const maxAllowedDrift = hasOcr ? (majorPx * 1.5) : (mmPx * 2.5);
+      if (drift > maxAllowedDrift) skippedByDrift = true;
     }
     const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
-    score -= 0.25 * driftPenalty;
+    const finalScore = score - 0.25 * driftPenalty;
+
+    if (filename && (
+      filename.includes("6.pdf") || 
+      filename.includes("7.pdf") ||
+      filename.includes("1.pdf") ||
+      filename.includes("10.pdf")
+    )) {
+      console.log(`[DEBUG GRID CAND] len=${rulerLengthMm}, start=${start.toFixed(2)}, matches=${matches}, baseScore=${score.toFixed(2)}, driftPenalty=${driftPenalty.toFixed(2)}, finalScore=${finalScore.toFixed(2)}, skippedByDrift=${skippedByDrift}`);
+    }
+
+    if (skippedByDrift) continue;
+    score = finalScore;
 
     if (!best) {
       best = { start, end: start + spanPx, score, matches };
-    } else if (matches > best.matches) {
+    } else if (score > best.score) {
       best = { start, end: start + spanPx, score, matches };
-    } else if (matches === best.matches) {
+    } else if (Math.abs(score - best.score) < 1e-4) {
       const dist = Number.isFinite(seedStart) ? Math.abs(start - seedStart) : 0;
       const bestDist = Number.isFinite(seedStart) ? Math.abs(best.start - seedStart) : 0;
       if (dist < bestDist) {
@@ -1083,6 +1167,8 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
 
 function filterRulerGlyphs(glyphs, maxDist = 18) {
   if (glyphs.length === 0) return [];
+  // console.log(`[DEBUG GLYPHS] raw glyphs: ${glyphs.length}`);
+  // if (glyphs.length < 20) console.log(JSON.stringify(glyphs.map(g => ({d: g.digit, perp: g.signedPerp, along: g.along}))));
   
   let bestGroup = [];
   let bestScore = -1;
@@ -1408,7 +1494,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
   }
 }
 
-function snapCandidateEndpoints(mat, candidate, expectedSpan) {
+function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
   if (!candidate || !candidate.p0 || !candidate.p12) return candidate;
   const len = distance(candidate.p0, candidate.p12);
   if (!Number.isFinite(len) || len < 40) return candidate;
@@ -1490,17 +1576,18 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan) {
       try {
         cv.findContours(binMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
         const labelPerpMin = tickPerp * 0.9;
-        const labelPerpMax = maxPerp * 3.0;
+        const labelPerpMax = maxPerp * 1.5;
 
         for (let i = 0; i < contours.size(); i += 1) {
           const cnt = contours.get(i);
           const rect = cv.boundingRect(cnt);
           cnt.delete();
 
-          if (rect.width < 5 || rect.height < 8) continue;
-          if (rect.width > 80 || rect.height > 100) continue;
+          if (Math.min(rect.width, rect.height) < 4) continue;
+          if (Math.max(rect.width, rect.height) > 100) continue;
           const aspect = rect.width / rect.height;
-          if (aspect < 0.12 || aspect > 1.4) continue;
+          const maxAspect = Math.max(aspect, 1 / aspect);
+          if (maxAspect > 8.0) continue;
 
           const cx = rect.x + rect.width / 2;
           const cy = rect.y + rect.height / 2;
@@ -1626,7 +1713,41 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan) {
   const tickClusters = clusterTickPeaks(tickSamples, Math.max(2, spanForGrid / 180));
   const labelClusters = clusterTickPeaks(labelSamples, Math.max(2, spanForGrid / 140));
   const lengthMm = candidate.detectedLengthMm || (spanForGrid > 900 ? 120 : 100);
-  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, s, e);
+  const filteredGlyphs = filterRulerGlyphs(glyphCandidates, 18);
+  
+  if (candidate.score === 1835.2) {
+    console.log(`[DEBUG SNAP] filteredGlyphs=${JSON.stringify(filteredGlyphs)}`);
+  }
+
+  const numberAnchors = inferNumberAnchorsFromGlyphs(filteredGlyphs);
+  const ocrStart = estimateOcrStart(numberAnchors, spanForGrid, lengthMm, s, len);
+
+  if (sourceMeta && sourceMeta.filename && (
+    sourceMeta.filename.includes("1.pdf") || 
+    sourceMeta.filename.includes("10.pdf") || 
+    sourceMeta.filename.includes("13.pdf") || 
+    sourceMeta.filename.includes("6.pdf") || 
+    sourceMeta.filename.includes("7.pdf") || 
+    sourceMeta.debugOCR
+  )) {
+    console.log(`\n[DEBUG FILENAME: ${sourceMeta.filename}]`);
+    console.log(`- lengthMm: ${lengthMm}`);
+    console.log(`- spanForGrid: ${spanForGrid}`);
+    console.log(`- fallback s: ${s}, e: ${e}`);
+    console.log(`- filteredGlyphs: ${JSON.stringify(filteredGlyphs)}`);
+    console.log(`- numberAnchors: ${JSON.stringify(numberAnchors)}`);
+    console.log(`- ocrStart: ${JSON.stringify(ocrStart)}`);
+    console.log(`- seedStart: ${ocrStart ? (ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start) : s}`);
+  }
+
+  const seedStart = ocrStart
+    ? (ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start)
+    : s;
+  const seedEnd = ocrStart
+    ? (ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid)
+    : e;
+
+  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, !!ocrStart, sourceMeta ? sourceMeta.filename : '');
   let snapMode = 'endpoint-snap+ocr-scan';
   if (grid) {
     s = grid.start;
@@ -1634,9 +1755,6 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan) {
     snapMode = 'endpoint-snap-grid+ocr-scan';
   }
 
-  const filteredGlyphs = filterRulerGlyphs(glyphCandidates, 18);
-  const numberAnchors = inferNumberAnchorsFromGlyphs(filteredGlyphs);
-  const ocrStart = estimateOcrStart(numberAnchors, spanForGrid, lengthMm, s, len);
   let shouldFlipDirection = false;
   
   const ocrGlyphPos = filteredGlyphs.filter((g) => g.sideSign > 0).length;
@@ -1651,8 +1769,8 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan) {
 
   if (ocrStart) {
     if (!grid) {
-      s = ocrStart.start; // 100% align horizontally with the cluster-based start
-      e = s + spanForGrid;
+      s = ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start;
+      e = ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid;
     }
     shouldFlipDirection = ocrStart.shouldFlip;
     snapMode = snapMode + '+ocr';
@@ -1759,7 +1877,7 @@ function detect(mat, sourceMeta, rulerLengthMm) {
       if (expectedSpan && expectedSpan > 0 && cand.detectedLengthMm && rulerLengthMm) {
         candExpectedSpan = expectedSpan * (cand.detectedLengthMm / rulerLengthMm);
       }
-      const refined = snapCandidateEndpoints(mat, cand, candExpectedSpan);
+      const refined = snapCandidateEndpoints(mat, cand, candExpectedSpan, sourceMeta);
       const matchCount = refined.ocrDigits ? refined.ocrDigits.filter(d => d.matched).length : 0;
       
       let isBand = cand.isBand;
@@ -1772,7 +1890,7 @@ function detect(mat, sourceMeta, rulerLengthMm) {
         p12: refined.p12,
         method: refined.method,
         reliable: refined.reliable || matchCount >= 2,
-        score: refined.score,
+        score: refined.score + (matchCount * 500),
         detectedLengthMm: refined.detectedLengthMm,
         ocrDigits: refined.ocrDigits,
         matchCount: matchCount,
@@ -1785,14 +1903,19 @@ function detect(mat, sourceMeta, rulerLengthMm) {
     }
 
     refinedCandidates.sort((a, b) => {
-      // 1. Prefer candidate with more OCR matched digits (if >= 2)
+      // 1. If one candidate has a massively higher base score (e.g. > 200 diff), it wins regardless of OCR noise
+      if (Math.abs(a.score - b.score) > 200) {
+        return b.score - a.score;
+      }
+
+      // 2. Prefer candidate with more OCR matched digits (if >= 2)
       const aMatches = a.matchCount >= 2 ? a.matchCount : 0;
       const bMatches = b.matchCount >= 2 ? b.matchCount : 0;
       if (aMatches !== bMatches) {
         return bMatches - aMatches;
       }
 
-      // 2. Prioritize reliable candidates
+      // 3. Prioritize reliable candidates
       if (a.reliable && !b.reliable) return -1;
       if (!a.reliable && b.reliable) return 1;
       

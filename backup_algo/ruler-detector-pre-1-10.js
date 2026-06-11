@@ -1068,7 +1068,7 @@ function rayDistanceToImageEdge(point, dirX, dirY, cols, rows) {
   return Number.isFinite(best) ? best : 1e9;
 }
 
-function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, hasOcr = false, filename = '') {
+function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, filename = '') {
   if (!Number.isFinite(spanPx) || spanPx <= 100 || !Number.isFinite(rulerLengthMm) || rulerLengthMm <= 0) {
     return null;
   }
@@ -1129,18 +1129,12 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
     let skippedByDrift = false;
     if (Number.isFinite(seedStart)) {
       const drift = Math.abs(start - seedStart);
-      const maxAllowedDrift = hasOcr ? (majorPx * 1.5) : (mmPx * 2.5);
-      if (drift > maxAllowedDrift) skippedByDrift = true;
+      if (drift > majorPx * 1.5) skippedByDrift = true;
     }
     const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
     const finalScore = score - 0.25 * driftPenalty;
 
-    if (filename && (
-      filename.includes("6.pdf") || 
-      filename.includes("7.pdf") ||
-      filename.includes("1.pdf") ||
-      filename.includes("10.pdf")
-    )) {
+    if (filename && (filename.includes("6.pdf") || filename.includes("7.pdf"))) {
       console.log(`[DEBUG GRID CAND] len=${rulerLengthMm}, start=${start.toFixed(2)}, matches=${matches}, baseScore=${score.toFixed(2)}, driftPenalty=${driftPenalty.toFixed(2)}, finalScore=${finalScore.toFixed(2)}, skippedByDrift=${skippedByDrift}`);
     }
 
@@ -1724,7 +1718,6 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
 
   if (sourceMeta && sourceMeta.filename && (
     sourceMeta.filename.includes("1.pdf") || 
-    sourceMeta.filename.includes("10.pdf") || 
     sourceMeta.filename.includes("13.pdf") || 
     sourceMeta.filename.includes("6.pdf") || 
     sourceMeta.filename.includes("7.pdf") || 
@@ -1747,7 +1740,7 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
     ? (ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid)
     : e;
 
-  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, !!ocrStart, sourceMeta ? sourceMeta.filename : '');
+  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, sourceMeta ? sourceMeta.filename : '');
   let snapMode = 'endpoint-snap+ocr-scan';
   if (grid) {
     s = grid.start;

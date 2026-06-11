@@ -10,6 +10,13 @@ __pycache__/
 .idea/
 .vscode/
 
+# Node.js
+node_modules/
+package-lock.json
+
+# Logs & Temporary Files
+*.log
+
 # Project Specific (Sensitive Data & Tests)
 01_Schablonen_Vorlagen_f*
 dataset/
@@ -18,3 +25,4 @@ scratch/
 stoma_offline_package.zip
 test_results.md
 ruler_ground_truth_backup.json
+

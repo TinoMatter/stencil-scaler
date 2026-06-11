@@ -1,0 +1,32 @@
+Loading OpenCV.js...
+OpenCV.js ready.
+Loaded ground truth for 13 stencils.
+Processing 1 stencil files for 1 algorithm versions...
+
+----------------------------------------------------------------------------------------------------------------------------------
+| File                                   | Version            | Status   | Method                         | cm    | GT-Diff      |
+----------------------------------------------------------------------------------------------------------------------------------
+[DEBUG detect] Candidates:
+  - [current/full-image] Tick-Cluster horizontal + endpoint-snap-grid+ocr-scan+ocr: score=2181.3, len=120, matchCount=0, band=false, rel=true
+  - [current/full-image] Tick-Cluster horizontal + endpoint-snap-grid+ocr-scan+ocr: score=2069.5, len=100, matchCount=0, band=false, rel=true
+  - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr-side: score=998.9, len=120, matchCount=0, band=false, rel=true
+  - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr-side: score=807.1, len=100, matchCount=0, band=false, rel=true
+[DEBUG detect] Candidates:
+  - [current/full-image] Tick-Cluster horizontal + endpoint-snap-grid+ocr-scan+ocr: score=2156.7, len=120, matchCount=0, band=false, rel=true
+  - [current/full-image] Tick-Cluster horizontal + endpoint-snap-grid+ocr-scan+ocr: score=2097.5, len=100, matchCount=0, band=false, rel=true
+  - [current/band-25%] Tick-Cluster horizontal + endpoint-snap-grid+ocr-scan+ocr-side: score=938.4, len=100, matchCount=0, band=true, rel=true
+  - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=998.9, len=120, matchCount=0, band=false, rel=true
+  - [current/band-25%] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=759.4, len=120, matchCount=0, band=true, rel=true
+  - [current/band-25%] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr-side: score=821.9, len=100, matchCount=0, band=true, rel=true
+[COORD PRINT] 15.05.2026 Vorname Nachname 9.pdf: p0=(1368.06, 734.64), p12=(347.59, 733.39), rulerLengthMm=120
+[DEBUG GT] detP0_normal=(1368.1, 734.6)
+[DEBUG GT] detP12_normal=(347.6, 733.4)
+[DEBUG GT] gtP0_normal=(1368.1, 734.6)
+[DEBUG GT] gtP12_normal=(347.6, 733.4)
+[DEBUG GT] finalErrPx=0.0, pxPerMm=8.50, maxErrMm=0.00
+| 15.05.2026 Vorname Nachname 9.pdf      | current-merged     | OK       | [current/full-image] Tick-Clus | 12    | MATCH (0.00mm) |
+----------------------------------------------------------------------------------------------------------------------------------
+
+Done. 1 reliable, 0 fallback, 0 errors.
+Previews saved to: /Users/up273900/Documents/Coding/stoma_stencils/test_outputs/
+Results report updated: /Users/up273900/Documents/Coding/stoma_stencils/test_results.md

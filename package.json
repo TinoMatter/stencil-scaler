@@ -1,0 +1,28 @@
+{
+  "name": "stoma_stencils",
+  "version": "1.0.0",
+  "description": "Ein reines Browser-basiertes Werkzeug, das eingescannte Stoma-Messschablonen oder Fotos davon in druckfertige A4-PDFs im exakten 1:1-Maßstab konvertiert.",
+  "main": "run_direct_tests.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TinoMatter/stencil-scaler.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/TinoMatter/stencil-scaler/issues"
+  },
+  "homepage": "https://github.com/TinoMatter/stencil-scaler#readme",
+  "dependencies": {
+    "canvas": "^3.2.3",
+    "image-size": "^2.0.2",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^3.11.174",
+    "pngjs": "^7.0.0"
+  }
+}

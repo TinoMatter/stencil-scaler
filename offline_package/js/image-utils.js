@@ -3,7 +3,10 @@
  * OpenCV-based and canvas-based image processing helpers.
  */
 
-const MM_TO_PT = 72 / 25.4;
+ (function (env) {
+  const isNode = typeof module !== 'undefined' && module.exports;
+  const cv = isNode ? (env.cv || require('../offline_package/vendor/opencv.js')) : env.cv;
+  const MM_TO_PT = 72 / 25.4;
 
 function deskew(src) {
   const gray = new cv.Mat();
@@ -13,8 +16,8 @@ function deskew(src) {
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-    cv.Canny(gray, edges, 60, 170);
-    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 90, src.cols * 0.25, 25);
+    cv.Canny(gray, edges, 50, 150, 3, false);
+    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 80, src.cols * 0.25, 20);
 
     const winkel = [];
     for (let i = 0; i < lines.rows; i += 1) {
@@ -315,20 +318,35 @@ function distance(a, b) {
   return Math.hypot((b.x - a.x), (b.y - a.y));
 }
 
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    deskew,
-    rotateWithFrame,
-    cropAndScaleStencilIfPossible,
-    trimWhiteMargins,
-    centerCropCanvas,
-    loadImage,
-    canvasToBytes,
-    imageFileToCanvas,
-    pdfFirstPageToCanvas,
-    loadFileAsSource,
-    quantile,
-    median,
-    distance
-  };
-}
+  if (isNode) {
+    module.exports = {
+      deskew,
+      rotateWithFrame,
+      cropAndScaleStencilIfPossible,
+      trimWhiteMargins,
+      centerCropCanvas,
+      loadImage,
+      canvasToBytes,
+      imageFileToCanvas,
+      pdfFirstPageToCanvas,
+      loadFileAsSource,
+      quantile,
+      median,
+      distance
+    };
+  } else {
+    env.deskew = deskew;
+    env.rotateWithFrame = rotateWithFrame;
+    env.cropAndScaleStencilIfPossible = cropAndScaleStencilIfPossible;
+    env.trimWhiteMargins = trimWhiteMargins;
+    env.centerCropCanvas = centerCropCanvas;
+    env.loadImage = loadImage;
+    env.canvasToBytes = canvasToBytes;
+    env.imageFileToCanvas = imageFileToCanvas;
+    env.pdfFirstPageToCanvas = pdfFirstPageToCanvas;
+    env.loadFileAsSource = loadFileAsSource;
+    env.quantile = quantile;
+    env.median = median;
+    env.distance = distance;
+  }
+})(typeof window !== 'undefined' ? window : (typeof global !== 'undefined' ? global : this));
