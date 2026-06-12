@@ -331,6 +331,7 @@ window.addEventListener("mouseup", () => {
   if (appState.drag.active) {
     appState.drag = { active: false, mode: null, last: null };
     previewCanvas.style.cursor = "default";
+    drawCurrentPreview();
     updateOcrDiagnosticsFromCalibration();
   }
 });

@@ -12,9 +12,34 @@ global.document = {
   }
 };
 
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    return {
+      canvas,
+      context,
+    };
+  }
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
+
 async function render() {
   const data = new Uint8Array(fs.readFileSync('01_Schablonen_Vorlagen_für_Tests/15.05.2026 Vorname Nachname 4.pdf'));
-  const doc = await pdfjsLib.getDocument({ data }).promise;
+  const doc = await pdfjsLib.getDocument({
+    data,
+    canvasFactory: new NodeCanvasFactory(),
+    disableFontFace: true,
+  }).promise;
   const page = await doc.getPage(1);
   const scale = 3.0;
   const viewport = page.getViewport({ scale });

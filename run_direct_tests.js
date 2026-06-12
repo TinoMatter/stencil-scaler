@@ -21,6 +21,7 @@ const path = require('path');
 const cp = require('child_process');
 const os = require('os');
 const fs = require('fs');
+const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
 // --- 1. Shim DOM Canvas for OpenCV.js & App scripts ---
 let createCanvas, Image, loadImage, ImageData;
@@ -36,8 +37,35 @@ global.HTMLImageElement = Image;
 global.HTMLCanvasElement = createCanvas(0, 0).constructor;
 global.OffscreenCanvas = createCanvas(0, 0).constructor;
 global.ImageData = ImageData;
-global.document = { createElement: tag => tag === 'canvas' ? createCanvas(0, 0) : null };
-global.window = {};
+global.document = {
+  createElement: (tag) => {
+    if (tag === 'canvas') return createCanvas(1, 1);
+    if (tag === 'img') return new Image();
+    return {};
+  }
+};
+global.window = {
+  requestAnimationFrame: (cb) => setTimeout(cb, 0),
+  cancelAnimationFrame: (id) => clearTimeout(id)
+};
+
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    return { canvas, context };
+  }
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
 
 const STENCILS_DIR = '/Users/up273900/Documents/Coding/stoma_stencils/01_Schablonen_Vorlagen_für_Tests';
 const OUTPUT_DIR = '/Users/up273900/Documents/Coding/stoma_stencils/test_outputs';
@@ -363,23 +391,30 @@ async function runAllTests() {
     let flippedMat = null;
 
     try {
-      let imgPath = filePath;
-
+      let sourceCanvas;
       if (file.endsWith('.pdf')) {
-        const prefix = path.join(os.tmpdir(), `stoma_${Date.now()}`);
-        const r = cp.spawnSync('pdftoppm',
-          ['-png', '-r', '216', '-f', '1', '-l', '1', filePath, prefix],
-          { timeout: 15000 });
-        if (r.status !== 0) throw new Error('pdftoppm failed');
-        tempPng = `${prefix}-1.png`;
-        imgPath = tempPng;
+        const data = new Uint8Array(fs.readFileSync(filePath));
+        const doc = await pdfjsLib.getDocument({
+          data,
+          canvasFactory: new NodeCanvasFactory(),
+          disableFontFace: true,
+        }).promise;
+        const page = await doc.getPage(1);
+        const scale = 3.0; // 216 DPI (72 * 3 = 216)
+        const viewport = page.getViewport({ scale });
+        
+        sourceCanvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+        const ctx = sourceCanvas.getContext("2d", { alpha: false });
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+        await page.render({ canvasContext: ctx, viewport }).promise;
+      } else {
+        // Load image into node-canvas (exact browser simulation)
+        const img = await loadImage(filePath);
+        sourceCanvas = createCanvas(img.width, img.height);
+        const ctx = sourceCanvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
       }
-
-      // Load image into node-canvas (exact browser simulation)
-      const img = await loadImage(imgPath);
-      const sourceCanvas = createCanvas(img.width, img.height);
-      const ctx = sourceCanvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
 
       function detectExpectedRulerLengthFromFilename(filename) {
         if (!filename) return 120;
@@ -404,11 +439,11 @@ async function runAllTests() {
       if (file.endsWith('.pdf')) {
         meta.isPdf = true;
         meta.pageIndex = 1;
-        meta.pageBreitePt = img.width / 3;
-        meta.pageHöhePt = img.height / 3;
+        meta.pageBreitePt = sourceCanvas.width / 3;
+        meta.pageHöhePt = sourceCanvas.height / 3;
         meta.renderScale = 3.0;
-        meta.sourceWidthPx = img.width;
-        meta.sourceHeightPx = img.height;
+        meta.sourceWidthPx = sourceCanvas.width;
+        meta.sourceHeightPx = sourceCanvas.height;
       }
 
       // --- Authentically simulate app.js autoDetectFromSource pipeline ---
@@ -566,17 +601,9 @@ async function runAllTests() {
         const H = activeMat.rows;
         const gtP0f  = { x: W - gt.p0.x,  y: H - gt.p0.y  };
         const gtP12f = { x: W - gt.p12.x, y: H - gt.p12.y };
-        // Draw whichever orientation (normal or rot180) is closer to detection
-        const errNorm = Math.max(
-          Math.hypot(p0.x - gt.p0.x, p0.y - gt.p0.y),
-          Math.hypot(p12.x - gt.p12.x, p12.y - gt.p12.y)
-        );
-        const errFlip = Math.max(
-          Math.hypot(p0.x - gtP0f.x, p0.y - gtP0f.y),
-          Math.hypot(p12.x - gtP12f.x, p12.y - gtP12f.y)
-        );
-        const drawP0  = errNorm <= errFlip ? gt.p0  : gtP0f;
-        const drawP12 = errNorm <= errFlip ? gt.p12 : gtP12f;
+        
+        const drawP0  = isFlipped ? gtP0f  : gt.p0;
+        const drawP12 = isFlipped ? gtP12f : gt.p12;
         // GT coords are in the same space as detected p0/p12 — draw directly.
         drawGroundTruthLine(preview, drawP0, drawP12, rulerMm);
       }
