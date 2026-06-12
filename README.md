@@ -1,3 +1,6 @@
+-we still don't have full parity of the run tests direct and the results of the algo in the browser.
+
+
 # Stoma-Schablonen Skalierer (Stoma Stencil Scaler)
 
 Ein reines Browser-basiertes Werkzeug, das eingescannte Stoma-Messschablonen oder Fotos davon in druckfertige A4-PDFs im exakten 1:1-Maßstab konvertiert.
@@ -55,7 +58,8 @@ Um das Offline-Paket manuell zu aktualisieren, führen Sie das Build-Skript im S
 
 The algorithm is only evaluated against purely human-measured ground truth to prepare for future ML training. Auto-passing is strictly disabled. 
 
-- **Manual Verification Only:** The E2E tests (`run_direct_tests.js`) will fail loudly and abort if a stencil does not have a confirmed ground truth entry in `ruler_ground_truth.json`.
+- **Exact Pipeline Matching:** The GUI and CLI test harness share the identical Crop → Deskew → Rotate pipeline. Ground-truth coordinates are transformed (crop offsets, scaling, deskew rotation, and flips) in the test runner exactly as in the browser before overlay and error measurement, ensuring visual and numeric parity.
+  **Manual Verification Only:** The E2E tests (`run_direct_tests.js`) will fail loudly and abort if a stencil does not have a confirmed ground truth entry in `ruler_ground_truth.json`.
 - **No Auto-Generation:** The test framework is forbidden from auto-generating baselines based on current algorithmic outputs.
 - **No Auto-Correction:** The algorithm or the LLM is strictly forbidden from correcting, modifying, or shifting the ground truth coordinates in `ruler_ground_truth.json` unless explicitly and specifically requested by the user.
 - **Privacy:** Real medical images or PII/PHI must never be committed to the public repository. Use `.gitignore` rules for all test images and outputs.

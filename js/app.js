@@ -29,6 +29,9 @@ const manualNote = document.getElementById("manualNote");
 const batchLog = document.getElementById("batchLog");
 const abortBtn = document.getElementById("abortBtn");
 
+// Web Worker for non-blocking file loading
+let loadWorker = null;
+
 const methodValue = document.getElementById("methodValue");
 const angleValue = document.getElementById("angleValue");
 const distanceValue = document.getElementById("distanceValue");
@@ -41,6 +44,7 @@ const ocrMirroredValue = document.getElementById("ocrMirroredValue");
 const appState = {
   cvReady: false,
   sourceName: "",
+  originalFile: null,
   sourceCanvas: null,
   sourceMeta: null,
   processedCanvas: null,
@@ -144,53 +148,87 @@ rulerLengthCustomInput.addEventListener("input", () => {
   }
 });
 
-dateiInput.addEventListener("change", async (event) => {
+dateiInput.addEventListener("change", (event) => {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
 
-  try {
-    resetStateForNewFile();
-    setStatus("Datei wird geladen ...");
-    setBusy(true, "Datei wird geladen ...");
-    await new Promise(r => setTimeout(r, 10));
+  resetStateForNewFile();
+  appState.originalFile = file;
+  appState.sourceName = file.name;
+  appState.abortActive = false;
+  setStatus("Datei wird geladen ...");
+  setBusy(true, "Datei wird geladen ...");
+  setUploadProgress(0);
 
-    appState.sourceName = file.name;
-    appState.originalFile = file;
-    const autoLen = detectExpectedRulerLengthFromFilename(file.name);
-    rulerLengthInput.value = String(autoLen);
-    updateRulerLengthUi();
-
-    const source = await loadFileAsSource(file);
-    appState.sourceCanvas = source.canvas;
-    appState.sourceMeta = source.sourceMeta;
-
-    drawBaseCanvas(appState.sourceCanvas);
-    setStatus(appState.sourceMeta.isPdf
-      ? "Datei geladen (PDF Seite 1). Auto-Erkennung startet ..."
-      : "Datei geladen. Auto-Erkennung startet ...");
-
-    erkennenBtn.disabled = false;
-    manuellBtn.disabled = false;
-
-    if (appState.cvReady) {
-      await startAutoDetection();
-    } else {
-      setBusy(false);
-    }
-  } catch (err) {
-    setStatus("Fehler beim Laden: " + err.message, true);
+  const reader = new FileReader();
+  reader.onprogress = (e) => {
+    if (e.lengthComputable) setUploadProgress((e.loaded / e.total) * 100);
+  };
+  reader.onerror = () => {
+    setStatus("Fehler beim Lesen: " + reader.error, true);
     setBusy(false);
-  }
+  };
+  reader.onload = () => {
+    if (appState.abortActive) return;
+    // Offload PDF/image rendering to worker
+    if (loadWorker) {
+      loadWorker.terminate();
+      loadWorker = null;
+    }
+    setStatus("Datei geladen. Auto-Erkennung startet ...");
+    setUploadProgress(100);
+
+    loadWorker = new Worker("js/loadWorker.js");
+    const loadId = Math.random().toString(36).slice(2);
+    loadWorker.onerror = (err) => {
+      setStatus("Fehler im Lade-Worker: " + err.message, true);
+      setBusy(false);
+      loadWorker.terminate();
+      loadWorker = null;
+    };
+    loadWorker.onmessage = ({ data }) => {
+      const { id, bitmap, sourceMeta, error } = data;
+      if (id !== loadId) return;
+      loadWorker.terminate();
+      loadWorker = null;
+      if (error) {
+        setStatus("Fehler beim Rendering: " + error, true);
+        setBusy(false);
+        return;
+      }
+      if (appState.abortActive) return;
+      const off = document.createElement("canvas");
+      off.width = bitmap.width;
+      off.height = bitmap.height;
+      off.getContext("2d").drawImage(bitmap, 0, 0);
+      appState.sourceCanvas = off;
+      appState.sourceMeta = sourceMeta;
+      drawBaseCanvas(off);
+      erkennenBtn.disabled = false;
+      manuellBtn.disabled = false;
+      if (appState.abortActive) return;
+      if (appState.cvReady) startAutoDetection(); else setBusy(false);
+    };
+    loadWorker.postMessage({ id: loadId, arrayBuffer: reader.result, fileType: file.type, fileName: file.name }, [reader.result]);
+  };
+  reader.readAsArrayBuffer(file);
 });
 
 abortBtn.addEventListener("click", () => {
+  if (loadWorker) {
+    loadWorker.terminate();
+    loadWorker = null;
+  }
   appState.abortActive = true;
   resetStateForNewFile();
   if (appState.sourceCanvas) {
     drawBaseCanvas(appState.sourceCanvas);
+    setStatus("Erkennung abgebrochen. Sie können manuell kalibrieren oder eine neue Datei laden.");
+    enableFallbackCalibration("Erkennung abgebrochen (Manuell)");
+  } else {
+    previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
+    setStatus("Erkennung abgebrochen. Bitte eine neue Datei laden.");
   }
-  setStatus("Erkennung abgebrochen. Sie können manuell kalibrieren oder eine neue Datei laden.");
-  enableFallbackCalibration("Erkennung abgebrochen (Manuell)");
 });
 
 function enableFallbackCalibration(methodName) {
@@ -392,7 +430,10 @@ downloadBtn.addEventListener("click", async () => {
     const zip = new JSZip();
     const baseName = filenameWithoutExtension(appState.sourceName);
     
-    zip.file(appState.originalFile.name, appState.originalFile);
+    // Add the original file under a new name with _orig suffix
+    const originalName = appState.originalFile.name;
+    const origFileName = originalName.replace(/(\.[^/.]+)$/, '_orig$1');
+    zip.file(origFileName, appState.originalFile);
     zip.file(`${baseName}_scaled.pdf`, pdfBlob);
     zip.file(`${baseName}_ground_truth.json`, jsonStr);
 
@@ -458,6 +499,7 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
   baseMat = prep.baseMat;
   flippedMat = prep.flippedMat;
   angleDeg = prep.angle || 0;
+  sourceMeta.scale = prep.scale || 1;
 
   if (appState.abortActive) {
     if (baseMat) baseMat.delete();
@@ -477,8 +519,22 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
     });
   };
 
+  if (typeof setUploadProgress === "function") {
+    setUploadProgress(80);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
   tryDetect(baseMat, "");
+
+  if (typeof setUploadProgress === "function") {
+    setUploadProgress(90);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
   tryDetect(flippedMat, "[rot180] ");
+
+  if (typeof setUploadProgress === "function") {
+    setUploadProgress(100);
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
 
   if (!candidates.length) {
     baseMat.delete();
@@ -784,7 +840,7 @@ function drawCurrentPreview() {
     const magRadius = 100;
     const zoom = 2.5;
     
-    const margin = 10;
+    const margin = 20;
     const offsetY = 140;
     // Compute and clamp magnifier center to remain fully inside canvas
     let magX = Math.min(Math.max(dragPoint.x, magRadius + margin), previewCanvas.width - magRadius - margin);
@@ -843,16 +899,16 @@ function drawCurrentPreview() {
     previewCtx.strokeStyle = "#ff00ff"; // Match calibration color (magenta)
     previewCtx.lineWidth = 1.5;
     
-    // Horizontal crosshair line
+    // Horizontal crosshair line (size of the whole glass)
     previewCtx.beginPath();
-    previewCtx.moveTo(magX - 10, magY);
-    previewCtx.lineTo(magX + 10, magY);
+    previewCtx.moveTo(magX - magRadius, magY);
+    previewCtx.lineTo(magX + magRadius, magY);
     previewCtx.stroke();
     
-    // Vertical crosshair line
+    // Vertical crosshair line (size of the whole glass)
     previewCtx.beginPath();
-    previewCtx.moveTo(magX, magY - 10);
-    previewCtx.lineTo(magX, magY + 10);
+    previewCtx.moveTo(magX, magY - magRadius);
+    previewCtx.lineTo(magX, magY + magRadius);
     previewCtx.stroke();
 
     previewCtx.restore();
@@ -893,6 +949,8 @@ window.updateMetrics = updateMetrics;
 function resetStateForNewFile() {
   appState.calibration = null;
   appState.processedCanvas = null;
+  appState.originalFile = null;
+  appState.sourceName = "";
   appState.manualActive = false;
   appState.manualPoints = [];
   appState.manualHover = null;
@@ -903,12 +961,26 @@ function resetStateForNewFile() {
   appState.ocrBusy = false;
   appState.ocrRequestId += 1;
   appState.userOverrodeLength = false;
+  
+  // Clear file inputs so the same file can be re-selected
+  if (dateiInput) dateiInput.value = "";
+  if (batchInput) batchInput.value = "";
+
   manualNote.style.display = "none";
   setAutoAlarm(false);
   setBusy(false);
   downloadBtn.disabled = true;
   printBtn.disabled = true;
   updateMetrics();
+}
+
+// Reset upload progress bar to default indeterminate state
+function setUploadProgress(pct) {
+  const bar = busyIndicator.querySelector('.busy-bar');
+  if (bar) {
+    bar.style.animation = 'none';
+    bar.style.width = pct + '%';
+  }
 }
 
 function setAutoAlarm(aktiv, text = "") {
@@ -930,10 +1002,57 @@ function setBusy(aktiv, text = "In Bearbeitung ...") {
     busyIndicator.style.display = "none";
     return;
   }
-  const label = busyIndicator.querySelector(".busy-label");
-  if (label) {
-    label.textContent = text;
+
+  const stageUpload = document.getElementById("stageUpload");
+  const stageDetect = document.getElementById("stageDetect");
+
+  if (stageUpload && stageDetect) {
+    const uploadStatus = stageUpload.querySelector(".stage-status");
+    const detectStatus = stageDetect.querySelector(".stage-status");
+
+    if (text.includes("geladen") || text.includes("Laden")) {
+      // Stage 1: Uploading
+      stageUpload.style.opacity = "1";
+      if (uploadStatus) {
+        uploadStatus.textContent = "Läuft...";
+        uploadStatus.style.color = "#176f9a";
+      // determinate bar
+      setUploadProgress(0);
+      }
+      stageDetect.style.opacity = "0.5";
+      if (detectStatus) {
+        detectStatus.textContent = "Wartend";
+        detectStatus.style.color = "#708090";
+      }
+    } else if (text.includes("Erkennung") || text.includes("läuft") || text.includes("verarbeitet")) {
+      // Stage 1: Completed, Stage 2: Detecting
+      stageUpload.style.opacity = "0.7";
+      if (uploadStatus) {
+        uploadStatus.textContent = "Fertig";
+        uploadStatus.style.color = "#0ea55f";
+      }
+      stageDetect.style.opacity = "1";
+      if (detectStatus) {
+        detectStatus.textContent = "Läuft...";
+        detectStatus.style.color = "#176f9a";
+      // initialize detection stage at 20%
+      setUploadProgress(20);
+      }
+    } else {
+      // Fallback/Generic
+      stageUpload.style.opacity = "1";
+      if (uploadStatus) {
+        uploadStatus.textContent = text;
+        uploadStatus.style.color = "#176f9a";
+      }
+      stageDetect.style.opacity = "0.5";
+      if (detectStatus) {
+        detectStatus.textContent = "Wartend";
+        detectStatus.style.color = "#708090";
+      }
+    }
   }
+
   busyIndicator.style.display = "block";
 }
 

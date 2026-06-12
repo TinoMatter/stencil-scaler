@@ -428,6 +428,7 @@
             <input id="rulerLengthCustomInput" type="number" step="0.1" min="1" max="100" placeholder="Wert in cm" style="display: none; width: 90px; padding: 6px; border: 1px solid #cfe0d4; border-radius: 8px; font-size: 0.88rem; font-weight: 700; text-align: center; color: #1f3d2a; background: #ffffff;" />
           </div>
         </div>
+        <p class="hint" style="margin-top: -6px; margin-bottom: 12px;">Hinweis: Die Lineallänge wird theoretisch automatisch aus dem Dateinamen oder Bildinhalt erkannt.</p>
         <div class="control-row">
           <button id="erkennenBtn" class="btn-primary" disabled>Erkennung erneut starten</button>
           <button id="manuellBtn" class="btn-ghost" disabled>Manuell 0 cm und 12 cm setzen</button>
@@ -438,9 +439,18 @@
         <div id="statusBox" class="status">Status: Bitte Datei laden.</div>
         <div id="autoAlarm" class="alarm-box" style="display:none;"></div>
         <div id="busyIndicator" class="busy-indicator">
-          <div class="busy-label">In Bearbeitung ...</div>
+          <div class="busy-stages" style="display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px;">
+            <div id="stageUpload" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.88rem; color: #1f4f66;">
+              <span style="font-weight: 600;">1. Datei laden</span>
+              <span class="stage-status" style="font-weight: 700; color: #176f9a;">Wartend</span>
+            </div>
+            <div id="stageDetect" style="display: flex; align-items: center; justify-content: space-between; font-size: 0.88rem; color: #1f4f66; opacity: 0.5;">
+              <span style="font-weight: 600;">2. Erkennung</span>
+              <span class="stage-status" style="font-weight: 700; color: #708090;">Wartend</span>
+            </div>
+          </div>
           <div class="busy-track"><div class="busy-bar"></div></div>
-          <button id="abortBtn" class="btn-ghost" style="margin-top: 10px; padding: 6px 10px; font-size: 0.8rem; height: auto; font-weight: 600;">Erkennung abbrechen</button>
+          <button id="abortBtn" class="btn-ghost" style="margin-top: 10px; padding: 6px 10px; font-size: 0.8rem; height: auto; font-weight: 600;">Abbrechen</button>
         </div>
       </div>
 

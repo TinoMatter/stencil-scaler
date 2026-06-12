@@ -32,7 +32,10 @@ function expectedDistanceFromMeta(meta, w, h, rulerLengthMm) {
 
   const pxPerMmX = basisW / pageWmm;
   const pxPerMmY = basisH / pageHmm;
-  const span = rulerLengthMm * ((pxPerMmX + pxPerMmY) / 2);
+  let span = rulerLengthMm * ((pxPerMmX + pxPerMmY) / 2);
+  if (meta && meta.scale) {
+    span *= meta.scale;
+  }
   return {
     horizontalPx: span,
     vertikalPx: span,

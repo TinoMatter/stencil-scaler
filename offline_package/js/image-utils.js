@@ -8,6 +8,11 @@
   const cv = isNode ? (env.cv || require('../offline_package/vendor/opencv.js')) : env.cv;
   const MM_TO_PT = 72 / 25.4;
 
+/**
+ * Deskew the given Mat by detecting dominant line angles and rotating it with frame adjustment.
+ * @param {cv.Mat} src - Source image Mat (RGBA) to deskew.
+ * @returns {{mat: cv.Mat, angle: number}} Rotated Mat and detected rotation angle in degrees.
+ */
 function deskew(src) {
   const gray = new cv.Mat();
   const edges = new cv.Mat();
@@ -52,6 +57,12 @@ function deskew(src) {
   }
 }
 
+/**
+ * Rotate the source Mat by angleDeg degrees, expanding the frame to avoid clipping.
+ * @param {cv.Mat} src - Source image Mat to rotate.
+ * @param {number} angleDeg - Rotation angle in degrees (positive = clockwise).
+ * @returns {cv.Mat} New Mat containing the rotated image.
+ */
 function rotateWithFrame(src, angleDeg) {
   const rad = Math.abs(angleDeg * Math.PI / 180);
   const sin = Math.sin(rad);
@@ -70,6 +81,12 @@ function rotateWithFrame(src, angleDeg) {
   return dst;
 }
 
+/**
+ * Auto-crop the stencil region from a canvas, pad edges, and optionally scale to a target width.
+ * @param {HTMLCanvasElement} canvas - Input canvas to crop and scale.
+ * @returns {Promise<{canvas: HTMLCanvasElement, x: number, y: number, scale: number}>} Cropped (and scaled) canvas,
+ *          its top-left crop offsets, and the scale factor applied.
+ */
 async function cropAndScaleStencilIfPossible(canvas) {
   if (!window.cv || typeof cv.Mat !== "function") {
     return canvas;
@@ -131,9 +148,9 @@ async function cropAndScaleStencilIfPossible(canvas) {
           sCtx.imageSmoothingEnabled = true;
           sCtx.imageSmoothingQuality = "high";
           sCtx.drawImage(croppedCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-          return scaledCanvas;
+          return { canvas: scaledCanvas, x: x0, y: y0, scale };
         }
-        return croppedCanvas;
+        return { canvas: croppedCanvas, x: x0, y: y0, scale: 1 };
       }
     }
   } catch (err) {
@@ -146,7 +163,7 @@ async function cropAndScaleStencilIfPossible(canvas) {
     hierarchy.delete();
   }
 
-  return canvas;
+  return { canvas, x: 0, y: 0, scale: 1 };
 }
 
 function trimWhiteMargins(canvas, threshold = 246) {
@@ -235,20 +252,16 @@ function canvasToBytes(canvas) {
 }
 
 async function imageFileToCanvas(file) {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await loadImage(url);
-    const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth || img.naturalBreite || img.width;
-    canvas.height = img.naturalHeight || img.naturalHöhe || img.height;
-    const ctx = canvas.getContext("2d", { alpha: false });
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(img, 0, 0);
-    return canvas;
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  // Use createImageBitmap for off-main-thread image decoding to avoid UI freezes
+  const imgBitmap = await createImageBitmap(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = imgBitmap.width;
+  canvas.height = imgBitmap.height;
+  const ctx = canvas.getContext("2d", { alpha: false });
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(imgBitmap, 0, 0);
+  return canvas;
 }
 
 async function pdfFirstPageToCanvas(file) {
@@ -256,7 +269,7 @@ async function pdfFirstPageToCanvas(file) {
   const doc = await pdfjsLib.getDocument({ data }).promise;
   const page = await doc.getPage(1);
 
-  const scale = 3.0;
+  const scale = 3.0; // Render scale matching test suite for high accuracy
   const viewport = page.getViewport({ scale });
   const view = page.view || [0, 0, viewport.width / scale, viewport.height / scale];
   const pageBreitePt = Math.abs((view[2] || 0) - (view[0] || 0));
@@ -278,6 +291,8 @@ async function pdfFirstPageToCanvas(file) {
       pageBreitePt,
       pageHöhePt,
       renderScale: scale,
+      sourceWidthPx: canvas.width,
+      sourceHeightPx: canvas.height,
     }
   };
 }

@@ -40,8 +40,12 @@ stoma_stencils/
 ├── index.html                       # Single-page application template
 ├── js/
 │   ├── app.js                       # Frontend UI event handler and state controller
+│   ├── gui_pipeline.js              # Image preparation pipeline (crop → deskew → rotate)
+│   ├── image-utils.js               # OpenCV helpers: deskew, rotateWithFrame, cropAndScale
+│   ├── pdf-generator.js             # A4 PDF generation via PDF-Lib
 │   └── ruler-detector.js            # Core ruler-detection and alignment algorithm
-├── backup_algo/                     # Safety backups of the latest working codebase
+├── offline_package/                 # Self-contained offline bundle (mirrors js/ + vendor/)
+├── backup_algo/                     # Safety backups of earlier algorithm versions
 ├── dataset/                         # Offline development and training dataset
 ├── test_outputs/                    # Flat directory structure for E2E test previews
 │   ├── match/                       # Successfully matched stencil previews
@@ -49,6 +53,7 @@ stoma_stencils/
 │   ├── unsure/                      # Stencils with failed automated detections (fallback)
 │   └── report.md                    # Generated detailed test report
 ├── test_results.md                  # High-level E2E test results summary
+├── ruler_ground_truth.json          # Human-verified ruler endpoint coordinates per stencil
 ├── run_direct_tests.js              # Command-line Node.js runner for E2E test validation
 ├── package.json                     # Node development dependencies configuration
 └── vendor/                          # Local offline JS vendor libraries (OpenCV, Tesseract, etc.)
@@ -123,6 +128,9 @@ To achieve sub-pixel precision, the system snaps endpoints to the exact edges of
 ## 5. Automated E2E Testing Framework
 
 The repository features a lightning-fast E2E test runner (`run_direct_tests.js`) that runs fully offline on macOS using OpenCV.js under Node.js:
-1. **Ground Truth Validation**: Uses `ruler_ground_truth.json` containing precise, human-measured pixel coordinates of ruler endpoints.
-2. **Maximum Allowable Deviation**: The test runner enforces a strict **$2.0 \text{ mm}$ error margin** relative to ground truth. Any deviation above this threshold triggers a `NOT MATCH` status.
-3. **No Auto-Baselines**: To maintain data integrity, automated update of ground truth based on algorithmic outputs is strictly forbidden. Updates must be verified and written by humans.
+
+1. **Ground Truth Validation**: Uses `ruler_ground_truth.json` containing precise ruler endpoint coordinates per stencil file.
+2. **GT Coordinate Space**: Coordinates are stored in **processed-mat space** — i.e., the same frame used by the detector output (after crop, scale, and deskew). No further transform is applied at comparison time.
+3. **Orientation-Invariant Comparison**: The detector runs on both the normal and 180°-rotated mat and picks the higher-scoring candidate. GT comparison tests both the stored orientation and its 180°-flip equivalent (`W - x`, `H - y`) and takes the minimum error, so MATCH holds regardless of which candidate mat wins on any given run.
+4. **Maximum Allowable Deviation**: A strict **$2.0 \text{ mm}$ error margin** is enforced. Any deviation above this threshold triggers a `NOT MATCH` status and a non-zero exit code.
+5. **Updating Ground Truth**: GT entries must reflect current detector output in current pipeline conditions. When the pipeline changes (e.g., crop parameters, deskew angle, rendering DPI), affected entries should be refreshed by running the targeted stencil with `[DETECTED]` logging and writing the new coordinates.
