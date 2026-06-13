@@ -153,6 +153,14 @@ dateiInput.addEventListener("change", (event) => {
   if (!file) return;
 
   resetStateForNewFile();
+  const defaultLength = detectExpectedRulerLengthFromFilename(file.name);
+  if (defaultLength === 10) {
+    rulerLengthInput.value = "10";
+  } else {
+    rulerLengthInput.value = "12";
+  }
+  updateRulerLengthUi();
+
   appState.originalFile = file;
   appState.sourceName = file.name;
   appState.abortActive = false;
