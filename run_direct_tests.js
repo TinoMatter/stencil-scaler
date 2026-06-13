@@ -68,7 +68,7 @@ class NodeCanvasFactory {
 }
 
 const STENCILS_DIR = '/Users/up273900/Documents/Coding/stoma_stencils/01_Schablonen_Vorlagen_für_Tests';
-const OUTPUT_DIR = '/Users/up273900/Documents/Coding/stoma_stencils/test_outputs';
+const OUTPUT_DIR = '/Users/up273900/Documents/Coding/stoma_stencils/test_outputs/direct_preview';
 const RESULTS_MD = '/Users/up273900/Documents/Coding/stoma_stencils/test_results.md';
 const MM_TO_PT = 72 / 25.4;
 
@@ -666,11 +666,6 @@ async function runAllTests() {
         if (minE === e3_check || minE === e4_check) {
           drawP0 = gtP0f;
           drawP12 = gtP12f;
-        }
-        if (minE === e2_check || minE === e4_check) {
-          const tmp = drawP0;
-          drawP0 = drawP12;
-          drawP12 = tmp;
         }
 
         // GT coords are in the same space as detected p0/p12 — draw directly.

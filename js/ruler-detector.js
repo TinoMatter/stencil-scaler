@@ -544,7 +544,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       const kStart = isCmOnly ? 10 * Math.round((centers[0] - lineMin) / (bestPxPerMm * 10)) : Math.round((centers[0] - lineMin) / bestPxPerMm);
       if (kStart >= 0 && kStart <= 30) {
         const baselineStart = centers[0] - kStart * bestPxPerMm;
-        if (Math.abs(baselineStart - start) < bestPxPerMm * 15) {
+        if (Math.abs(baselineStart - start) < bestPxPerMm * 5) {
           start = baselineStart;
           end = start + bestL * bestPxPerMm;
         }
@@ -1017,7 +1017,7 @@ function ocrDigitFromRoi(binMat, rect, rotateCode = null) {
       }
     }
 
-    if (!best || best.score < 0.2) {
+    if (!best || best.score < 0.25) {
       return null;
     }
     return best;
@@ -1064,10 +1064,10 @@ function inferNumberAnchorsFromGlyphs(glyphs) {
   return anchors;
 }
 
-function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
-  if (!anchors.length || !Number.isFinite(spanPx) || spanPx <= 100 || !Number.isFinite(rulerLengthMm) || rulerLengthMm <= 0) {
-    return null;
-  }
+function estimateOcrStart(anchors, spanPx, rulerLengthMm, s, len) {
+  if (anchors.length < 2) return null;
+  const mmPx = spanPx / rulerLengthMm;
+  const seedStart = s;
 
   const sideBuckets = new Map();
   for (let i = 0; i < anchors.length; i += 1) {
@@ -1090,8 +1090,8 @@ function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
         const a = bucket[i];
         if (a.number <= 0 || a.number > maxCm) continue;
         const start = dir === 'forward' 
-          ? a.along - (a.number / maxCm) * spanPx
-          : (len - a.along) - (a.number / maxCm) * spanPx;
+          ? a.along - (a.number * 10 * mmPx)
+          : (len - a.along) - (a.number * 10 * mmPx);
         candidates.push({ start, anchor: a });
         totalScore += a.score;
       }
@@ -1121,13 +1121,27 @@ function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
       const expectedStart = dir === 'forward' ? seedStart : len - (seedStart + spanPx);
       const drift = Number.isFinite(seedStart) ? Math.abs(med - expectedStart) : 0;
 
-      const maxDrift = Math.max(80, spanPx * 0.12);
+      // Relax drift check if we have strong OCR support (3+ unique numbers)
+      // This allows finding the ruler even if the initial line fragment is far from the endpoints.
+      const isStrong = uniqueNumbers.size >= 3;
+      const maxDrift = isStrong ? Math.max(500, spanPx * 0.6) : Math.max(80, spanPx * 0.12);
       if (Number.isFinite(seedStart) && drift > maxDrift) continue;
 
       const score = totalScore + support * 1.5 - inlierMad * 0.5 - drift * 0.002;
 
       if (!best || score > best.score) {
-        best = { start: med, sideSign, score, support, mad, inlierMad, shouldFlip: dir === 'backward' };
+        // Convert med (which is 0cm mark in current dir) to forward coordinate system
+        const finalStart = dir === 'forward' ? med : len - med;
+        best = { 
+          start: finalStart, 
+          sideSign, 
+          score, 
+          support, 
+          mad, 
+          inlierMad, 
+          shouldFlip: dir === 'backward',
+          anchors: inliers.map(c => c.anchor)
+        };
       }
     }
   }
@@ -1153,19 +1167,29 @@ function rayDistanceToImageEdge(point, dirX, dirY, cols, rows) {
   return Number.isFinite(best) ? best : 1e9;
 }
 
-function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, hasOcr = false, filename = '', projS = null, projE = null) {
+function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, ocrResult = null, filename = '', projS = null, projE = null) {
   if (!Number.isFinite(spanPx) || spanPx <= 100 || !Number.isFinite(rulerLengthMm) || rulerLengthMm <= 0) {
     return null;
   }
+  const hasOcr = !!ocrResult;
 
   const mmPx = spanPx / rulerLengthMm;
   const majorPx = mmPx * 10;
   const majorCount = Math.round(rulerLengthMm / 10);
   if (!Number.isFinite(majorPx) || majorPx < 20 || majorCount < 5) return null;
 
-  const tickTol = Math.max(6, majorPx * 0.24);
-  const labelTol = Math.max(8, majorPx * 0.34);
+  const tickTol = Math.max(10, majorPx * 0.18);
+  const labelTol = Math.max(12, majorPx * 0.28);
   const candidates = [];
+
+  // Add candidates from OCR anchors if available
+  if (ocrResult && ocrResult.anchors) {
+    for (const a of ocrResult.anchors) {
+      // Try both orientations for each anchor to be safe
+      candidates.push(a.along - (a.number * 10 * mmPx));
+      candidates.push(a.along - ((rulerLengthMm / 10 - a.number) * 10 * mmPx));
+    }
+  }
 
   for (let i = 0; i < tickClusters.length; i += 1) {
     const peak = tickClusters[i];
@@ -1188,70 +1212,77 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
   let best = null;
   for (let i = 0; i < dedup.length; i += 1) {
     const start = dedup[i];
-    let score = 0;
-    let matches = 0;
+    
+    // Try both orientations for each candidate to find the best fit
+    for (const isFlipped of [false, true]) {
+      let score = 0;
+      let matches = 0;
 
-    for (let k = 0; k <= majorCount; k += 1) {
-      const target = start + k * majorPx;
-      const isEndpoint = (k === 0 || k === majorCount);
-      const tick = nearestClusterDist(tickClusters, target, tickTol);
-      if (tick) {
-        const closeness = 1 - (tick.d / tickTol);
-        const endpointWeight = isEndpoint ? 0.7 : 1.0;
-        score += endpointWeight * closeness * (1 + Math.min(3, tick.cluster.maxWeight / 8));
-        matches += 1;
-      }
+      for (let k = 0; k <= majorCount; k += 1) {
+        const target = start + k * majorPx;
+        const isEndpoint = (k === 0 || k === majorCount);
+        const tick = nearestClusterDist(tickClusters, target, tickTol);
+        if (tick) {
+          const closeness = 1 - (tick.d / tickTol);
+          const endpointWeight = isEndpoint ? 0.7 : 1.0;
+          score += endpointWeight * closeness * (1 + Math.min(3, tick.cluster.maxWeight / 8));
+          matches += 1;
+        }
 
-      if (!isEndpoint && labelClusters.length) {
-        const lbl = nearestClusterDist(labelClusters, target, labelTol);
-        if (lbl) {
-          const closeness = 1 - (lbl.d / labelTol);
-          score += 0.45 * closeness * (1 + Math.min(2, lbl.cluster.maxWeight / 10));
+        if (!isEndpoint && labelClusters.length) {
+          const lbl = nearestClusterDist(labelClusters, target, labelTol);
+          if (lbl) {
+            const closeness = 1 - (lbl.d / labelTol);
+            score += 0.45 * closeness * (1 + Math.min(2, lbl.cluster.maxWeight / 10));
+          }
         }
       }
-    }
 
-    let skippedByDrift = false;
-    if (Number.isFinite(seedStart) && hasOcr) {
-      const drift = Math.abs(start - seedStart);
-      // Allow up to 11mm drift to handle periodic 5mm and 10mm grid-phase shifts
-      // where the ruler starts slightly off-image or OCR estimates are off by one grid period.
-      const maxAllowedDrift = mmPx * 11.0;
-      if (drift > maxAllowedDrift) skippedByDrift = true;
-    }
-    const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
+      // Add OCR consistency score
+      let ocrMatches = 0;
+      if (ocrResult && ocrResult.anchors) {
+        for (const a of ocrResult.anchors) {
+          const expectedAlong = isFlipped 
+            ? (start + spanPx) - (a.number * 10 * mmPx)
+            : start + (a.number * 10 * mmPx);
+          if (Math.abs(a.along - expectedAlong) < tickTol * 2.0) {
+            ocrMatches++;
+          }
+        }
+      }
+      score += ocrMatches * 4.0; // Strong weight for OCR consistency
 
-    // Penalize grids whose endpoints overshoot the observed projection region.
-    // This disambiguates shifted grids (whose 0cm or 12cm mark lands off-image)
-    // from the correct grid (whose endpoints stay within the observed tick cloud).
-    let boundsPenalty = 0;
-    if (Number.isFinite(projS) && Number.isFinite(projE) && projE > projS) {
-      const endOvershoot = Math.max(0, (start + spanPx) - projE);
-      const startOvershoot = Math.max(0, projS - start);
-      // Scale penalty relative to one major tick so it competes with match scores
-      boundsPenalty = (endOvershoot + startOvershoot) / Math.max(majorPx, 1) * 0.35;
-    }
+      let skippedByDrift = false;
+      if (Number.isFinite(seedStart) && hasOcr) {
+        const drift = Math.abs(start - seedStart);
+        // Relax drift limit to 5mm to allow for some initial OCR error
+        const maxAllowedDrift = mmPx * 5.0;
+        if (drift > maxAllowedDrift) skippedByDrift = true;
+      }
+      const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
 
-    const finalScore = score - 0.25 * driftPenalty - boundsPenalty;
+      if (skippedByDrift) continue;
 
-    if (skippedByDrift) continue;
-    score = finalScore;
+      // Penalize grids whose endpoints overshoot the observed projection region.
+      let boundsPenalty = 0;
+      if (projS !== null && start < projS - tickTol) boundsPenalty += 0.5;
+      if (projE !== null && (start + spanPx) > projE + tickTol) boundsPenalty += 0.5;
 
-    if (!best) {
-      best = { start, end: start + spanPx, score, matches };
-    } else if (score > best.score) {
-      best = { start, end: start + spanPx, score, matches };
-    } else if (Math.abs(score - best.score) < 1e-4) {
-      const dist = Number.isFinite(seedStart) ? Math.abs(start - seedStart) : 0;
-      const bestDist = Number.isFinite(seedStart) ? Math.abs(best.start - seedStart) : 0;
-      if (dist < bestDist) {
-        best = { start, end: start + spanPx, score, matches };
+      const finalScore = score - driftPenalty * 0.15 - boundsPenalty;
+
+      if (!best || finalScore > best.score) {
+        best = {
+          start,
+          end: start + spanPx,
+          score: finalScore,
+          matchCount: matches,
+          shouldFlip: isFlipped
+        };
       }
     }
   }
 
-  const minMatches = Math.max(4, Math.floor((majorCount + 1) * 0.45));
-  if (!best || best.matches < minMatches) return null;
+  if (!best || best.score < 1.5) return null;
   return best;
 }
 
@@ -1358,12 +1389,12 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
       const mapCols = loopMaps[0].map.cols;
       const mapRows = loopMaps[0].map.rows;
 
-      // Coarse search pass: step-size 3 for dy, step-size 6 for sx, fewer scales
+      // Coarse search pass: step-size 2 for dy, step-size 4 for sx, fewer scales
       for (const dir of ['forward', 'backward']) {
         const expectedStartX = dir === 'forward' ? (cropW / 2 - len / 2) : (cropW / 2 + len / 2);
         const dirSign = dir === 'forward' ? 1 : -1;
 
-        for (let i = 0; i < dyCandidates.length; i += 3) {
+        for (let i = 0; i < dyCandidates.length; i += 2) {
           const dy = dyCandidates[i];
           const y_c = Math.round(cropH / 2 + dy);
           const ty = Math.round(y_c - loopH / 2);
@@ -1372,7 +1403,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
           const searchRange = Math.max(35, Math.round(expectedDx * 1.5));
           const startSx = Math.round(expectedStartX - searchRange);
           const endSx = Math.round(expectedStartX + searchRange);
-          for (let sx = startSx; sx <= endSx; sx += 6) {
+          for (let sx = startSx; sx <= endSx; sx += 4) {
             for (const scale of [0.96, 1.0, 1.04]) {
               const dx = scale * expectedDx;
               let scoreSum = 0;
@@ -1380,7 +1411,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
 
               for (let c = 1; c <= 9; c++) {
                 const cx_val = Math.round(sx + dirSign * c * dx);
-                const tx = Math.round(cx_val - loopW / 2);
+                const tx = Math.round(cx_val - W_tpl / 2);
                 if (tx < 0 || tx >= mapCols) continue;
 
                 const val = loopMaps[c - 1].map.data32F[ty * mapCols + tx];
@@ -1452,39 +1483,39 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
       for (let dy = dyMin; dy <= dyMax; dy += 1) {
         const y_c = Math.round(cropH / 2 + dy);
         const ty = Math.round(y_c - H_tpl / 2);
-        if (ty < 0 || ty >= mapRows) continue;
+        if (ty >= 0 && ty < mapRows) {
+          for (let sx = sxMin; sx <= sxMax; sx += 1) {
+            for (let scale = -0.02; scale <= 0.02; scale += 0.005) {
+              const dx = bestParams.dx + scale * expectedDx;
+              let scoreSum = 0;
+              let matchedCount = 0;
 
-        for (let sx = sxMin; sx <= sxMax; sx += 1) {
-          for (let scale = -0.02; scale <= 0.02; scale += 0.005) {
-            const dx = bestParams.dx + scale * expectedDx;
-            let scoreSum = 0;
-            let matchedCount = 0;
+              for (let c = 1; c <= 9; c++) {
+                const cx_val = Math.round(sx + dirSign * c * dx);
+                const tx = Math.round(cx_val - W_tpl / 2);
+                if (tx < 0 || tx >= mapCols) continue;
 
-            for (let c = 1; c <= 9; c++) {
-              const cx_val = Math.round(sx + dirSign * c * dx);
-              const tx = Math.round(cx_val - W_tpl / 2);
-              if (tx < 0 || tx >= mapCols) continue;
-
-              const val = matchMaps[c - 1].map.data32F[ty * mapCols + tx];
-              if (val > 0.45) {
-                let maxOtherVal = -1;
-                for (let other_c = 1; other_c <= 9; other_c++) {
-                  const otherVal = matchMaps[other_c - 1].map.data32F[ty * mapCols + tx];
-                  if (otherVal > maxOtherVal) {
-                    maxOtherVal = otherVal;
+                const val = matchMaps[c - 1].map.data32F[ty * mapCols + tx];
+                if (val > 0.45) {
+                  let maxOtherVal = -1;
+                  for (let other_c = 1; other_c <= 9; other_c++) {
+                    const otherVal = matchMaps[other_c - 1].map.data32F[ty * mapCols + tx];
+                    if (otherVal > maxOtherVal) {
+                      maxOtherVal = otherVal;
+                    }
+                  }
+                  if (val >= maxOtherVal * 0.85) {
+                    scoreSum += val;
+                    matchedCount++;
                   }
                 }
-                if (val >= maxOtherVal * 0.85) {
-                  scoreSum += val;
-                  matchedCount++;
-                }
               }
-            }
 
-            const score = matchedCount * 10.0 + scoreSum;
-            if (score > refinedBestScore) {
-              refinedBestScore = score;
-              refinedParams = { dir: bestParams.dir, dy, sx, dx, matchedCount, scoreSum };
+              const score = matchedCount * 10.0 + scoreSum;
+              if (score > refinedBestScore) {
+                refinedBestScore = score;
+                refinedParams = { dir: bestParams.dir, dy, sx, dx, matchedCount, scoreSum };
+              }
             }
           }
         }
@@ -1854,46 +1885,48 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
   if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return candidate;
 
   const spanForGrid = Number.isFinite(effectiveExpectedSpan) && effectiveExpectedSpan > 60 ? effectiveExpectedSpan : (e - s);
-  const tickClusters = clusterTickPeaks(tickSamples, Math.max(2, spanForGrid / 180));
-  const labelClusters = clusterTickPeaks(labelSamples, Math.max(2, spanForGrid / 140));
-  const lengthMm = candidate.detectedLengthMm || (spanForGrid > 900 ? 120 : 100);
-  const filteredGlyphs = filterRulerGlyphs(glyphCandidates, 18);
+  const tickClusters = clusterTickPeaks(tickSamples, Math.max(4, spanForGrid / 120));
+  const labelClusters = clusterTickPeaks(labelSamples, Math.max(5, spanForGrid / 100));
   
-  if (candidate.score === 1835.2) {
-    console.log(`[DEBUG SNAP] filteredGlyphs=${JSON.stringify(filteredGlyphs)}`);
-  }
-
+  const filteredGlyphs = filterRulerGlyphs(glyphCandidates, 18);
   const numberAnchors = inferNumberAnchorsFromGlyphs(filteredGlyphs);
-  const ocrStart = estimateOcrStart(numberAnchors, spanForGrid, lengthMm, s, len);
+  const ocrStart = estimateOcrStart(numberAnchors, spanForGrid, 120, s, len) || estimateOcrStart(numberAnchors, spanForGrid, 100, s, len);
 
-  if (sourceMeta && sourceMeta.filename) {
-    console.log(`\n[DEBUG FILENAME: ${sourceMeta.filename}]`);
-    console.log(`- lengthMm: ${lengthMm}`);
-    console.log(`- spanForGrid: ${spanForGrid}`);
-    console.log(`- fallback s: ${s}, e: ${e}`);
-    console.log(`- filteredGlyphs: ${JSON.stringify(filteredGlyphs)}`);
-    console.log(`- numberAnchors: ${JSON.stringify(numberAnchors)}`);
-    console.log(`- ocrStart: ${JSON.stringify(ocrStart)}`);
-    console.log(`- seedStart: ${ocrStart ? (ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start) : s}`);
+  // Try both 100mm and 120mm lengths and pick the best fit
+  const lengthsToTry = [100, 120];
+  let bestGrid = null;
+  let bestLengthMm = 120;
+  let bestGridScore = -1;
+
+  for (const lengthMm of lengthsToTry) {
+    const seedStart = ocrStart
+      ? (ocrStart.shouldFlip ? ocrStart.start - spanForGrid : ocrStart.start)
+      : s;
+    const seedEnd = ocrStart
+      ? (ocrStart.shouldFlip ? ocrStart.start : ocrStart.start + spanForGrid)
+      : e;
+
+    const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, ocrStart, sourceMeta ? sourceMeta.filename : '', s, e);
+    if (grid && grid.score > bestGridScore) {
+      bestGridScore = grid.score;
+      bestGrid = grid;
+      bestLengthMm = lengthMm;
+    }
   }
 
-  const seedStart = ocrStart
-    ? (ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start)
-    : s;
-  const seedEnd = ocrStart
-    ? (ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid)
-    : e;
+  const lengthMm = bestLengthMm;
+  const grid = bestGrid;
 
-  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, !!ocrStart, sourceMeta ? sourceMeta.filename : '', s, e);
   let snapMode = 'endpoint-snap+ocr-scan';
+  let shouldFlipDirection = false;
+
   if (grid) {
     s = grid.start;
     e = grid.end;
-    snapMode = 'endpoint-snap-grid+ocr-scan';
+    shouldFlipDirection = grid.shouldFlip;
+    snapMode = 'endpoint-snap-grid';
   }
 
-  let shouldFlipDirection = false;
-  
   const ocrGlyphPos = filteredGlyphs.filter((g) => g.sideSign > 0).length;
   const ocrGlyphNeg = filteredGlyphs.filter((g) => g.sideSign < 0).length;
   let sideVote = 0;
@@ -1908,13 +1941,15 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
     if (!grid) {
       s = ocrStart.shouldFlip ? len - ocrStart.start - spanForGrid : ocrStart.start;
       e = ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid;
+      shouldFlipDirection = ocrStart.shouldFlip;
     }
-    shouldFlipDirection = ocrStart.shouldFlip;
     snapMode = snapMode + '+ocr';
   } else if (sideVote !== 0) {
-    shouldFlipDirection = sideVote < 0;
+    if (!grid) {
+      shouldFlipDirection = sideVote < 0;
+    }
     snapMode = snapMode + '+ocr-side';
-  } else {
+  } else if (!grid) {
     const mid = {
       x: candidate.p0.x + ux * ((s + e) / 2),
       y: candidate.p0.y + uy * ((s + e) / 2),
@@ -1946,12 +1981,8 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
 
   const ocrRes = extractRulerDigits(mat, outP0, outP12, lengthMm);
   
-  let finalP0 = outP0;
-  let finalP12 = outP12;
-  if (!grid) {
     finalP0 = ocrRes.p0;
     finalP12 = ocrRes.p12;
-  }
 
   return {
     ...candidate,

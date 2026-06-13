@@ -268,14 +268,14 @@ erkennenBtn.addEventListener("click", async () => {
 
 manuellBtn.addEventListener("click", () => {
   if (!appState.processedCanvas) {
-    setStatus("Please load a file and start auto-detection first.", true);
+    setStatus("Bitte zuerst eine Datei laden.", true);
     return;
   }
   appState.manualActive = true;
   appState.manualPoints = [];
   manualNote.style.display = "block";
   const len = getRulerLengthCm();
-  setStatus(`Manuell aktiv: erst 0 cm, dann ${len} cm im Bild klicken.`);
+  setStatus(`Manuell aktiv: Klicken Sie ZUERST auf die 0 cm Markierung, dann auf die ${len} cm Markierung.`);
 });
 
 previewCanvas.addEventListener("mousedown", (event) => {
@@ -362,14 +362,14 @@ previewCanvas.addEventListener("click", (event) => {
   appState.manualPoints.push(p);
   const len = getRulerLengthCm();
   if (appState.manualPoints.length === 1) {
-    setStatus(`Punkt für 0 cm gesetzt. Jetzt Punkt für ${len} cm.`);
+    setStatus(`0 cm Markierung gesetzt. Klicken Sie jetzt auf die ${len} cm Markierung.`);
     drawCurrentPreview();
     return;
   }
 
   const [p0, p12] = appState.manualPoints;
   appState.calibration = {
-    method: `Manuell gesetzt (0/${len} cm Klick)`,
+    method: `Manuell gesetzt (0 -> ${len} cm)`,
     p0,
     p12,
     lineReliable: true,
@@ -377,6 +377,7 @@ previewCanvas.addEventListener("click", (event) => {
     overlayColor: "#0ea55f",
     forceLineScale: true,
     angleDeg: appState.calibration ? appState.calibration.angleDeg : 0,
+    detectedLengthMm: getRulerLengthMm(),
   };
 
   appState.manualActive = false;
@@ -385,7 +386,7 @@ previewCanvas.addEventListener("click", (event) => {
   updateCalibrationFromLine(appState.calibration.method, true, true);
   updateOcrDiagnosticsFromCalibration();
   setAutoAlarm(false);
-  setStatus("Manuelle Kalibrierung übernommen. Ausgabe ist bereit.");
+  setStatus(`Manuelle Kalibrierung (0 bis ${len} cm) übernommen. Ausgabe ist bereit.`);
 });
 
 // Automatic Training Data & Ground Truth Unified Upload Logic

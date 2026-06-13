@@ -1,0 +1,29 @@
+Server running at http://localhost:8080/
+Running Browser E2E Tests on 2 files...
+
+Testing: 08.04.2026 Vorname Nachname 12.pdf
+[Browser] Failed to load resource: the server responded with a status of 404 (Not Found)
+[Browser] Warning: Setting up fake worker.
+[Browser] [DEBUG detect] ERROR in detect: ReferenceError: mmPx is not defined
+    at estimateOcrStart (http://localhost:8080/js/ruler-detector.js:1093:40)
+    at snapCandidateEndpoints (http://localhost:8080/js/ruler-detector.js:1886:20)
+    at detect (http://localhost:8080/js/ruler-detector.js:2042:23)
+    at tryDetect (http://localhost:8080/js/app.js:522:19)
+    at autoDetectFromSource (http://localhost:8080/js/app.js:535:3)
+    at async startAutoDetection (http://localhost:8080/js/app.js:622:20)
+  -> Status: NOT MATCH (124.58 mm error)
+  -> Saved preview screenshot.
+
+Testing: 08.04.2026 Vorname Nachname 13.pdf
+[Browser] Warning: Setting up fake worker.
+[Browser] [DEBUG detect] ERROR in detect: ReferenceError: mmPx is not defined
+    at estimateOcrStart (http://localhost:8080/js/ruler-detector.js:1093:40)
+    at snapCandidateEndpoints (http://localhost:8080/js/ruler-detector.js:1886:20)
+    at detect (http://localhost:8080/js/ruler-detector.js:2042:23)
+    at tryDetect (http://localhost:8080/js/app.js:522:19)
+    at autoDetectFromSource (http://localhost:8080/js/app.js:535:3)
+    at async startAutoDetection (http://localhost:8080/js/app.js:622:20)
+  -> Status: NOT MATCH (135.60 mm error)
+  -> Saved preview screenshot.
+
+Some E2E Browser tests failed. ❌

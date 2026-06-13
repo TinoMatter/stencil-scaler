@@ -68,14 +68,16 @@ The algorithm is only evaluated against purely human-measured ground truth to pr
 - When this tool goes into production, consider exposing an API endpoint that captures approved calibration and OCR data so you can continuously train both the deterministic detection algorithm and any downstream ML model without relying on manual uploads.
 
 ### Running Direct Tests
-To run the programmatic detection tests against the ground truth dataset:
+To run the E2E programmatic detection tests against the ground truth dataset:
 ```bash
-node run_direct_tests.js "path/to/your/test_file.pdf"
+node run_direct_tests.js                  # Runs all stencils
+node run_direct_tests.js 2 3 16           # Runs select stencils by file number
+node run_direct_tests.js "Vorname 8"      # Runs matching stencils by filename substring
 ```
-*Note: This runs the core detection logic without the GUI's auto-cropping or deskewing preprocessing.*
+*Note: This HEADLESS CLI pipeline replicates the exact browser canvas pipeline (Crop → Deskew → Detect → Flip) and compares the final results against `ruler_ground_truth.json`.*
 
-- **Ground Truth:** The script will only pass if the detected ruler matches the values in `ruler_ground_truth.json`.
-- **Failures:** If a file is missing from the ground truth, the test will abort to prevent false positives.
+- **Ground Truth:** The script will only pass if the detected ruler matches the values in `ruler_ground_truth.json` (within a strict 1.5mm tolerance).
+- **Failures:** If validation fails or a file is missing from the ground truth, the test will abort with exit code 1 to prevent false positives.
 
 ### Running GUI Preprocessing CLI
 To run the GUI pipeline (Crop → Deskew → Rotate) programmatically on a stencil image:

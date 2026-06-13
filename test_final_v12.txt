@@ -1,0 +1,35 @@
+Server running at http://localhost:8080/
+Running Browser E2E Tests on 2 files...
+
+Testing: 08.04.2026 Vorname Nachname 12.pdf
+[Browser] Failed to load resource: the server responded with a status of 404 (Not Found)
+[Browser] Warning: Setting up fake worker.
+[Browser] [DEBUG detect] Candidates:
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=3053.4, len=120, matchCount=2, band=false, rel=true
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=2446.0, len=100, matchCount=1, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1138.7, len=120, matchCount=0, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=2963.0, len=100, matchCount=4, band=false, rel=true
+[Browser] [DEBUG detect] Candidates:
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=2208.4, len=120, matchCount=0, band=false, rel=true
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=3588.7, len=100, matchCount=3, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1656.1, len=120, matchCount=1, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1942.6, len=100, matchCount=2, band=false, rel=true
+  -> Status: NOT MATCH (10.51 mm error)
+  -> Saved preview screenshot.
+
+Testing: 08.04.2026 Vorname Nachname 13.pdf
+[Browser] Warning: Setting up fake worker.
+[Browser] [DEBUG detect] Candidates:
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=3075.2, len=120, matchCount=2, band=false, rel=true
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=2913.3, len=100, matchCount=2, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1163.9, len=120, matchCount=0, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1435.8, len=100, matchCount=1, band=false, rel=true
+[Browser] [DEBUG detect] Candidates:
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=3198.5, len=120, matchCount=2, band=false, rel=true
+[Browser]   - [current/full-image] Tick-Cluster vertikal + endpoint-snap-grid+ocr-scan+ocr: score=2557.9, len=100, matchCount=1, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1163.9, len=120, matchCount=0, band=false, rel=true
+[Browser]   - [current/full-image] Linien-Fallback (Rand + Plausibel) + endpoint-snap-grid+ocr-scan+ocr: score=1938.6, len=100, matchCount=2, band=false, rel=true
+  -> Status: NOT MATCH (17.51 mm error)
+  -> Saved preview screenshot.
+
+Some E2E Browser tests failed. ❌
