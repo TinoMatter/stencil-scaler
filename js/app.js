@@ -95,7 +95,7 @@ window.getRulerLengthMm = getRulerLengthMm;
 function updateRulerLengthUi() {
   const len = getRulerLengthCm();
   manuellBtn.textContent = `Manuell 0 cm und ${len} cm setzen`;
-  manualNote.textContent = `Manual active: click 0 cm, then ${len} cm in image.`;
+  manualNote.textContent = `Manuell aktiv: erst 0 cm, dann ${len} cm im Bild klicken.`;
   if (!appState.calibration || appState.calibration.pixelDist === undefined) {
     distanceValue.textContent = `0-${len} cm Distanz (px): -`;
   } else {
