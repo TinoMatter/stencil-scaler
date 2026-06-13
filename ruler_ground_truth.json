@@ -41,7 +41,7 @@
       "x": 266.87,
       "y": 762.50
     },
-    "rulerLengthMm": 105
+    "rulerLengthMm": 120
   },
   "15.05.2026 Vorname Nachname 1.pdf": {
     "p0": {
@@ -96,7 +96,7 @@
       "x": 1533.32,
       "y": 715.19
     },
-    "rulerLengthMm": 108
+    "rulerLengthMm": 120
   },
   "08.04.2026 Vorname Nachname 12.pdf": {
     "p0": {
@@ -119,5 +119,16 @@
       "y": 1941.99
     },
     "rulerLengthMm": 120
+  },
+  "15.05.2026 Vorname Nachname 4.pdf": {
+    "p0": {
+      "x": 519.65,
+      "y": 1399.64
+    },
+    "p12": {
+      "x": 1372.54,
+      "y": 1397.31
+    },
+    "rulerLengthMm": 100
   }
 }

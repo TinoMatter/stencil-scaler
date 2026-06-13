@@ -375,8 +375,11 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       pxPerMm_candidate = roughPxPerMm;
     }
 
-    const isDebugStencil1 = (orientation === "horizontal" && centers.some(c => Math.abs(c - 1716.77) < 15));
+    const isDebugStencil1 = false;
     const candidatesL = [100, 120];
+    if (rulerLengthMm && !candidatesL.includes(rulerLengthMm)) {
+      candidatesL.push(rulerLengthMm);
+    }
     for (const tryL of candidatesL) {
       if (pxPerMm_candidate <= 0) continue;
 
@@ -629,40 +632,116 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       group.length >= (isCmOnly ? 8 : 50) &&
       regular >= 0.15 &&
       (!expectedSpan || (spanErr <= 0.18 && stepErr <= 0.15));
-
-
-
     let m = 0;
     let c = center;
-    const N = group.length;
-    if (N > 0) {
-      let sumX = 0, sumY = 0;
-      for (const t of group) {
-        sumX += t.x;
-        sumY += t.y;
+    let alignedToSegment = false;
+
+    if (baselineSegments && baselineSegments.length > 0) {
+      const matchingBaselines = baselineSegments.filter(s => {
+        const distToCenter = orientation === "horizontal" 
+          ? Math.abs(s.y - center) 
+          : Math.abs(s.x - center);
+        return distToCenter <= bandHalf * 1.5;
+      });
+      if (matchingBaselines.length > 0) {
+        matchingBaselines.sort((a, b) => b.len - a.len);
+        const longest = matchingBaselines[0];
+        if (longest.len >= Math.min(cols, rows) * 0.08) {
+          if (orientation === "horizontal") {
+            const dx = longest.x2 - longest.x1;
+            if (Math.abs(dx) > 1e-6) {
+              m = (longest.y2 - longest.y1) / dx;
+              c = longest.y1 - m * longest.x1;
+              alignedToSegment = true;
+            }
+          } else {
+            const dy = longest.y2 - longest.y1;
+            if (Math.abs(dy) > 1e-6) {
+              m = (longest.x2 - longest.x1) / dy;
+              c = longest.x1 - m * longest.y1;
+              alignedToSegment = true;
+            }
+          }
+        }
       }
-      const meanX = sumX / N;
-      const meanY = sumY / N;
+    }
+
+    if (!alignedToSegment && group.length > 0) {
+      const fitLineResidualsH = (pts) => {
+        const numPts = pts.length;
+        if (numPts < 2) return { m: 0, c: 0, variance: Infinity };
+        let sumX = 0, sumY = 0;
+        for (const p of pts) {
+          sumX += p.x;
+          sumY += p.y;
+        }
+        const meanX = sumX / numPts;
+        const meanY = sumY / numPts;
+        let num = 0, den = 0;
+        for (const p of pts) {
+          num += (p.x - meanX) * (p.y - meanY);
+          den += (p.x - meanX) * (p.x - meanX);
+        }
+        if (den <= 1e-6) return { m: 0, c: meanY, variance: Infinity };
+        const slope = num / den;
+        const intercept = meanY - slope * meanX;
+        let residualSum = 0;
+        for (const p of pts) {
+          const predY = slope * p.x + intercept;
+          residualSum += (p.y - predY) * (p.y - predY);
+        }
+        return { m: slope, c: intercept, variance: residualSum / numPts };
+      };
+
+      const fitLineResidualsV = (pts) => {
+        const numPts = pts.length;
+        if (numPts < 2) return { m: 0, c: 0, variance: Infinity };
+        let sumX = 0, sumY = 0;
+        for (const p of pts) {
+          sumX += p.x;
+          sumY += p.y;
+        }
+        const meanX = sumX / numPts;
+        const meanY = sumY / numPts;
+        let num = 0, den = 0;
+        for (const p of pts) {
+          num += (p.y - meanY) * (p.x - meanX);
+          den += (p.y - meanY) * (p.y - meanY);
+        }
+        if (den <= 1e-6) return { m: 0, c: meanX, variance: Infinity };
+        const slope = num / den;
+        const intercept = meanX - slope * meanY;
+        let residualSum = 0;
+        for (const p of pts) {
+          const predX = slope * p.y + intercept;
+          residualSum += (p.x - predX) * (p.x - predX);
+        }
+        return { m: slope, c: intercept, variance: residualSum / numPts };
+      };
 
       if (orientation === "horizontal") {
-        let num = 0, den = 0;
-        for (const t of group) {
-          num += (t.x - meanX) * (t.y - meanY);
-          den += (t.x - meanX) * (t.x - meanX);
-        }
-        if (den > 1e-6) {
-          m = num / den;
-          c = meanY - m * meanX;
+        const topPts = group.map(t => t.y1 < t.y2 ? { x: t.x1, y: t.y1 } : { x: t.x2, y: t.y2 });
+        const bottomPts = group.map(t => t.y1 > t.y2 ? { x: t.x1, y: t.y1 } : { x: t.x2, y: t.y2 });
+        const fitTop = fitLineResidualsH(topPts);
+        const fitBottom = fitLineResidualsH(bottomPts);
+        if (fitTop.variance < fitBottom.variance) {
+          m = fitTop.m;
+          c = fitTop.c;
+        } else {
+          m = fitBottom.m;
+          c = fitBottom.c;
         }
       } else {
-        let num = 0, den = 0;
-        for (const t of group) {
-          num += (t.y - meanY) * (t.x - meanX);
-          den += (t.y - meanY) * (t.y - meanY);
-        }
-        if (den > 1e-6) {
-          m = num / den;
-          c = meanX - m * meanY;
+        const leftPts = group.map(t => t.x1 < t.x2 ? { x: t.x1, y: t.y1 } : { x: t.x2, y: t.y2 });
+        const rightPts = group.map(t => t.x1 > t.x2 ? { x: t.x1, y: t.y1 } : { x: t.x2, y: t.y2 });
+        const fitLeft = fitLineResidualsV(leftPts);
+        const fitRight = fitLineResidualsV(rightPts);
+        if (fitLeft.variance < fitRight.variance) {
+          m = fitLeft.m;
+          c = fitLeft.c;
+        } else {
+          m = fitRight.m;
+          c = fitRight.c;
         }
       }
     }
@@ -879,7 +958,7 @@ function ensureBaseDigitMats() {
   return BASE_DIGIT_MATS;
 }
 
-function getScaledTemplates(pxPerMm, heightRatio = 1.8) {
+function getScaledTemplates(pxPerMm, heightRatio = 1.8, rotateCode = null) {
   const base = ensureBaseDigitMats();
   const H_tpl = Math.max(8, Math.round(heightRatio * pxPerMm));
   const W_tpl = Math.max(5, Math.round(H_tpl * (16 / 24)));
@@ -889,55 +968,53 @@ function getScaledTemplates(pxPerMm, heightRatio = 1.8) {
     const dst = new cv.Mat();
     cv.resize(t.mat, dst, new cv.Size(W_tpl, H_tpl), 0, 0, cv.INTER_AREA);
     cv.threshold(dst, dst, 120, 255, cv.THRESH_BINARY);
-    scaled.push({ digit: t.digit, mat: dst, width: W_tpl, height: H_tpl });
+    if (rotateCode !== null) {
+      const rotated = new cv.Mat();
+      cv.rotate(dst, rotated, rotateCode);
+      dst.delete();
+      scaled.push({ digit: t.digit, mat: rotated, width: rotated.cols, height: rotated.rows });
+    } else {
+      scaled.push({ digit: t.digit, mat: dst, width: W_tpl, height: H_tpl });
+    }
   }
   return scaled;
 }
 
-function ocrDigitFromRoi(binMat, rect) {
+function ocrDigitFromRoi(binMat, rect, rotateCode = null) {
   if (Math.min(rect.width, rect.height) < 4 || Math.max(rect.width, rect.height) > 100) return null;
   const roi = binMat.roi(rect);
   const resized = new cv.Mat();
+  let rotated = null;
   try {
-    cv.resize(roi, resized, new cv.Size(28, 44), 0, 0, cv.INTER_AREA);
+    let matToResize = roi;
+    if (rotateCode !== null) {
+      rotated = new cv.Mat();
+      cv.rotate(roi, rotated, rotateCode);
+      matToResize = rotated;
+    }
+    cv.resize(matToResize, resized, new cv.Size(28, 44), 0, 0, cv.INTER_AREA);
     cv.threshold(resized, resized, 120, 255, cv.THRESH_BINARY);
 
     const templates = ensureDigitTemplates();
     let best = null;
 
-    const rots = [
-      roi,
-      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_90_CLOCKWISE); return d; })(),
-      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_180); return d; })(),
-      (() => { const d = new cv.Mat(); cv.rotate(roi, d, cv.ROTATE_90_COUNTERCLOCKWISE); return d; })()
-    ];
-
-    try {
-      for (const r of rots) {
-        cv.resize(r, resized, new cv.Size(28, 44), 0, 0, cv.INTER_AREA);
-        cv.threshold(resized, resized, 120, 255, cv.THRESH_BINARY);
-
-        const rData = resized.data;
-        for (let i = 0; i < templates.length; i += 1) {
-          const t = templates[i];
-          const tData = t.data;
-          const tLen = tData.length;
-          let inter = 0;
-          let union = 0;
-          for (let p = 0; p < tLen; p += 1) {
-            const a = rData[p];
-            const b = tData[p];
-            if (a && b) inter += 1;
-            if (a || b) union += 1;
-          }
-          const score = union > 0 ? inter / union : 0;
-          if (!best || score > best.score) {
-            best = { digit: t.digit, score };
-          }
-        }
+    const rData = resized.data;
+    for (let i = 0; i < templates.length; i += 1) {
+      const t = templates[i];
+      const tData = t.data;
+      const tLen = tData.length;
+      let inter = 0;
+      let union = 0;
+      for (let p = 0; p < tLen; p += 1) {
+        const a = rData[p];
+        const b = tData[p];
+        if (a && b) inter += 1;
+        if (a || b) union += 1;
       }
-    } finally {
-      for (let i = 1; i < rots.length; i++) rots[i].delete();
+      const score = union > 0 ? inter / union : 0;
+      if (!best || score > best.score) {
+        best = { digit: t.digit, score };
+      }
     }
 
     if (!best || best.score < 0.2) {
@@ -947,6 +1024,7 @@ function ocrDigitFromRoi(binMat, rect) {
   } finally {
     roi.delete();
     resized.delete();
+    if (rotated) rotated.delete();
   }
 }
 
@@ -1005,7 +1083,7 @@ function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
   for (const [sideSign, bucket] of sideBuckets.entries()) {
     const directions = ['forward', 'backward'];
     for (const dir of directions) {
-      const starts = [];
+      const candidates = [];
       let totalScore = 0;
 
       for (let i = 0; i < bucket.length; i += 1) {
@@ -1014,24 +1092,28 @@ function estimateOcrStart(anchors, spanPx, rulerLengthMm, seedStart, len) {
         const start = dir === 'forward' 
           ? a.along - (a.number / maxCm) * spanPx
           : (len - a.along) - (a.number / maxCm) * spanPx;
-        starts.push(start);
+        candidates.push({ start, anchor: a });
         totalScore += a.score;
       }
 
-      if (starts.length < 2) continue;
-      starts.sort((x, y) => x - y);
-      const med = starts[Math.floor(starts.length / 2)];
+      if (candidates.length < 2) continue;
+      candidates.sort((x, y) => x.start - y.start);
+      const med = candidates[Math.floor(candidates.length / 2)].start;
+      
       let mad = 0;
-      for (let i = 0; i < starts.length; i += 1) mad += Math.abs(starts[i] - med);
-      mad /= starts.length;
+      for (let i = 0; i < candidates.length; i += 1) mad += Math.abs(candidates[i].start - med);
+      mad /= candidates.length;
 
       const tol = Math.max(16, spanPx * 0.03);
-      const inliers = starts.filter(s => Math.abs(s - med) <= tol);
+      const inliers = candidates.filter(c => Math.abs(c.start - med) <= tol);
       const support = inliers.length;
       if (support < 2) continue;
 
+      const uniqueNumbers = new Set(inliers.map(c => c.anchor.number));
+      if (uniqueNumbers.size < 2) continue; // Must have at least 2 different unique numbers to trust OCR
+
       let inlierMad = 0;
-      for (const s of inliers) inlierMad += Math.abs(s - med);
+      for (const c of inliers) inlierMad += Math.abs(c.start - med);
       inlierMad /= support;
 
       if (inlierMad > tol * 0.6) continue;
@@ -1071,7 +1153,7 @@ function rayDistanceToImageEdge(point, dirX, dirY, cols, rows) {
   return Number.isFinite(best) ? best : 1e9;
 }
 
-function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, hasOcr = false, filename = '') {
+function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, seedStart, seedEnd, hasOcr = false, filename = '', projS = null, projE = null) {
   if (!Number.isFinite(spanPx) || spanPx <= 100 || !Number.isFinite(rulerLengthMm) || rulerLengthMm <= 0) {
     return null;
   }
@@ -1130,22 +1212,27 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
     }
 
     let skippedByDrift = false;
-    if (Number.isFinite(seedStart)) {
+    if (Number.isFinite(seedStart) && hasOcr) {
       const drift = Math.abs(start - seedStart);
-      const maxAllowedDrift = hasOcr ? (majorPx * 1.5) : (mmPx * 2.5);
+      // Allow up to 11mm drift to handle periodic 5mm and 10mm grid-phase shifts
+      // where the ruler starts slightly off-image or OCR estimates are off by one grid period.
+      const maxAllowedDrift = mmPx * 11.0;
       if (drift > maxAllowedDrift) skippedByDrift = true;
     }
     const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
-    const finalScore = score - 0.25 * driftPenalty;
 
-    if (filename && (
-      filename.includes("6.pdf") || 
-      filename.includes("7.pdf") ||
-      filename.includes("1.pdf") ||
-      filename.includes("10.pdf")
-    )) {
-      console.log(`[DEBUG GRID CAND] len=${rulerLengthMm}, start=${start.toFixed(2)}, matches=${matches}, baseScore=${score.toFixed(2)}, driftPenalty=${driftPenalty.toFixed(2)}, finalScore=${finalScore.toFixed(2)}, skippedByDrift=${skippedByDrift}`);
+    // Penalize grids whose endpoints overshoot the observed projection region.
+    // This disambiguates shifted grids (whose 0cm or 12cm mark lands off-image)
+    // from the correct grid (whose endpoints stay within the observed tick cloud).
+    let boundsPenalty = 0;
+    if (Number.isFinite(projS) && Number.isFinite(projE) && projE > projS) {
+      const endOvershoot = Math.max(0, (start + spanPx) - projE);
+      const startOvershoot = Math.max(0, projS - start);
+      // Scale penalty relative to one major tick so it competes with match scores
+      boundsPenalty = (endOvershoot + startOvershoot) / Math.max(majorPx, 1) * 0.35;
     }
+
+    const finalScore = score - 0.25 * driftPenalty - boundsPenalty;
 
     if (skippedByDrift) continue;
     score = finalScore;
@@ -1216,6 +1303,18 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
   try {
     cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
 
+    const cx = (p0.x + p12.x) / 2;
+    const cy = (p0.y + p12.y) / 2;
+    const ux = (p12.x - p0.x) / len;
+    const uy = (p12.y - p0.y) / len;
+    const nx = -uy;
+    const ny = ux;
+
+    let rotateCode = null;
+    if (Math.abs(uy) > Math.abs(ux)) {
+      rotateCode = uy > 0 ? cv.ROTATE_90_CLOCKWISE : cv.ROTATE_90_COUNTERCLOCKWISE;
+    }
+
     const minOffset = Math.max(12, Math.round(pxPerMm * 2.5));
     const maxOffset = Math.min(120, Math.round(pxPerMm * 12.0));
     const expectedDx = 10 * pxPerMm;
@@ -1223,13 +1322,6 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
     const dyCandidates = [];
     for (let dy = minOffset; dy <= maxOffset; dy += 2) dyCandidates.push(dy);
     for (let dy = -maxOffset; dy <= -minOffset; dy += 2) dyCandidates.push(dy);
-
-    const cx = (p0.x + p12.x) / 2;
-    const cy = (p0.y + p12.y) / 2;
-    const ux = (p12.x - p0.x) / len;
-    const uy = (p12.y - p0.y) / len;
-    const nx = -uy;
-    const ny = ux;
 
     const cropW = Math.round(len + 100);
     const cropH = Math.round(2 * maxOffset + 40);
@@ -1251,7 +1343,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
 
     const ratioCandidates = [1.3, 1.8, 2.3];
     for (const ratio of ratioCandidates) {
-      const loopTemplates = getScaledTemplates(pxPerMm, ratio);
+      const loopTemplates = getScaledTemplates(pxPerMm, ratio, rotateCode);
       const loopH = loopTemplates[0].height;
       const loopW = loopTemplates[0].width;
 
@@ -1266,19 +1358,22 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
       const mapCols = loopMaps[0].map.cols;
       const mapRows = loopMaps[0].map.rows;
 
+      // Coarse search pass: step-size 3 for dy, step-size 6 for sx, fewer scales
       for (const dir of ['forward', 'backward']) {
         const expectedStartX = dir === 'forward' ? (cropW / 2 - len / 2) : (cropW / 2 + len / 2);
         const dirSign = dir === 'forward' ? 1 : -1;
 
-        for (let i = 0; i < dyCandidates.length; i++) {
+        for (let i = 0; i < dyCandidates.length; i += 3) {
           const dy = dyCandidates[i];
           const y_c = Math.round(cropH / 2 + dy);
           const ty = Math.round(y_c - loopH / 2);
           if (ty < 0 || ty >= mapRows) continue;
 
           const searchRange = Math.max(35, Math.round(expectedDx * 1.5));
-          for (let sx = Math.round(expectedStartX - searchRange); sx <= Math.round(expectedStartX + searchRange); sx += 2) {
-            for (const scale of [0.96, 0.98, 1.0, 1.02, 1.04]) {
+          const startSx = Math.round(expectedStartX - searchRange);
+          const endSx = Math.round(expectedStartX + searchRange);
+          for (let sx = startSx; sx <= endSx; sx += 6) {
+            for (const scale of [0.96, 1.0, 1.04]) {
               const dx = scale * expectedDx;
               let scoreSum = 0;
               let matchedCount = 0;
@@ -1289,9 +1384,18 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
                 if (tx < 0 || tx >= mapCols) continue;
 
                 const val = loopMaps[c - 1].map.data32F[ty * mapCols + tx];
-                if (val > 0.70) {
-                  scoreSum += val;
-                  matchedCount++;
+                if (val > 0.45) {
+                  let maxOtherVal = -1;
+                  for (let other_c = 1; other_c <= 9; other_c++) {
+                    const otherVal = loopMaps[other_c - 1].map.data32F[ty * mapCols + tx];
+                    if (otherVal > maxOtherVal) {
+                      maxOtherVal = otherVal;
+                    }
+                  }
+                  if (val >= maxOtherVal * 0.85) {
+                    scoreSum += val;
+                    matchedCount++;
+                  }
                 }
               }
 
@@ -1315,7 +1419,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
     let mapRows = 0;
 
     if (bestParams) {
-      scaledTemplates = getScaledTemplates(pxPerMm, bestParams.ratio);
+      scaledTemplates = getScaledTemplates(pxPerMm, bestParams.ratio, rotateCode);
       H_tpl = scaledTemplates[0].height;
       W_tpl = scaledTemplates[0].width;
 
@@ -1328,7 +1432,7 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
       mapCols = matchMaps[0].map.cols;
       mapRows = matchMaps[0].map.rows;
     } else {
-      scaledTemplates = getScaledTemplates(pxPerMm, 1.8);
+      scaledTemplates = getScaledTemplates(pxPerMm, 1.8, rotateCode);
       H_tpl = scaledTemplates[0].height;
       W_tpl = scaledTemplates[0].width;
     }
@@ -1338,12 +1442,20 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
     if (bestParams && bestParams.matchedCount >= 2) {
       let refinedBestScore = bestScore;
       const dirSign = bestParams.dir === 'forward' ? 1 : -1;
-      const y_c = Math.round(cropH / 2 + bestParams.dy);
-      const ty = Math.round(y_c - H_tpl / 2);
 
-      if (ty >= 0 && ty < mapRows) {
-        for (let sx = bestParams.sx - 2; sx <= bestParams.sx + 2; sx += 1) {
-          for (let scale = -0.015; scale <= 0.015; scale += 0.005) {
+      // Fine search pass: refine dy, sx, scale locally
+      const dyMin = bestParams.dy - 3;
+      const dyMax = bestParams.dy + 3;
+      const sxMin = bestParams.sx - 5;
+      const sxMax = bestParams.sx + 5;
+
+      for (let dy = dyMin; dy <= dyMax; dy += 1) {
+        const y_c = Math.round(cropH / 2 + dy);
+        const ty = Math.round(y_c - H_tpl / 2);
+        if (ty < 0 || ty >= mapRows) continue;
+
+        for (let sx = sxMin; sx <= sxMax; sx += 1) {
+          for (let scale = -0.02; scale <= 0.02; scale += 0.005) {
             const dx = bestParams.dx + scale * expectedDx;
             let scoreSum = 0;
             let matchedCount = 0;
@@ -1354,16 +1466,25 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
               if (tx < 0 || tx >= mapCols) continue;
 
               const val = matchMaps[c - 1].map.data32F[ty * mapCols + tx];
-              if (val > 0.70) {
-                scoreSum += val;
-                matchedCount++;
+              if (val > 0.45) {
+                let maxOtherVal = -1;
+                for (let other_c = 1; other_c <= 9; other_c++) {
+                  const otherVal = matchMaps[other_c - 1].map.data32F[ty * mapCols + tx];
+                  if (otherVal > maxOtherVal) {
+                    maxOtherVal = otherVal;
+                  }
+                }
+                if (val >= maxOtherVal * 0.85) {
+                  scoreSum += val;
+                  matchedCount++;
+                }
               }
             }
 
             const score = matchedCount * 10.0 + scoreSum;
             if (score > refinedBestScore) {
               refinedBestScore = score;
-              refinedParams = { dir: bestParams.dir, dy: bestParams.dy, sx, dx, matchedCount, scoreSum };
+              refinedParams = { dir: bestParams.dir, dy, sx, dx, matchedCount, scoreSum };
             }
           }
         }
@@ -1415,13 +1536,26 @@ function extractRulerDigits(mat, p0, p12, rulerLengthMm) {
         }
       }
 
-      if (localBestScore > 0.70) {
-        const matchedCx = localBestTx + W_tpl / 2;
-        const matchedCy = targetY;
-        const origX = cx + ux * (matchedCx - cropW / 2) - uy * (matchedCy - cropH / 2);
-        const origY = cy + uy * (matchedCx - cropW / 2) + ux * (matchedCy - cropH / 2);
-        matchedDigits.push({ c, x: origX, y: origY });
-        finalDigits.push({ digit: c, x: origX, y: origY, rectWidth: W_tpl, rectHeight: H_tpl, matched: true, signedPerp: refinedParams ? refinedParams.dy : 0 });
+      if (localBestScore > 0.45) {
+        let maxOtherVal = -1;
+        for (let other_c = 1; other_c <= 9; other_c++) {
+          const score = matchMaps[other_c - 1].map.data32F[ty * mapCols + localBestTx];
+          if (score > maxOtherVal) {
+            maxOtherVal = score;
+          }
+        }
+        if (localBestScore >= maxOtherVal * 0.85) {
+          const matchedCx = localBestTx + W_tpl / 2;
+          const matchedCy = targetY;
+          const origX = cx + ux * (matchedCx - cropW / 2) - uy * (matchedCy - cropH / 2);
+          const origY = cy + uy * (matchedCx - cropW / 2) + ux * (matchedCy - cropH / 2);
+          matchedDigits.push({ c, x: origX, y: origY });
+          finalDigits.push({ digit: c, x: origX, y: origY, rectWidth: W_tpl, rectHeight: H_tpl, matched: true, signedPerp: refinedParams ? refinedParams.dy : 0 });
+        } else {
+          const origX = cx + ux * (targetX - cropW / 2) - uy * (targetY - cropH / 2);
+          const origY = cy + uy * (targetX - cropW / 2) + ux * (targetY - cropH / 2);
+          finalDigits.push({ digit: c, x: origX, y: origY, rectWidth: W_tpl, rectHeight: H_tpl, matched: false, signedPerp: refinedParams ? refinedParams.dy : 0 });
+        }
       } else {
         const origX = cx + ux * (targetX - cropW / 2) - uy * (targetY - cropH / 2);
         const origY = cy + uy * (targetX - cropW / 2) + ux * (targetY - cropH / 2);
@@ -1581,6 +1715,13 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
         const labelPerpMin = tickPerp * 0.9;
         const labelPerpMax = maxPerp * 1.5;
 
+        let ocrRotateCode = null;
+        if (Math.abs(uy) > Math.abs(ux)) {
+          ocrRotateCode = uy > 0 ? cv.ROTATE_90_CLOCKWISE : cv.ROTATE_90_COUNTERCLOCKWISE;
+        } else if (ux < 0) {
+          ocrRotateCode = cv.ROTATE_180;
+        }
+
         for (let i = 0; i < contours.size(); i += 1) {
           const cnt = contours.get(i);
           const rect = cv.boundingRect(cnt);
@@ -1603,7 +1744,7 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
           if (along < -margin || along > (len + margin)) continue;
           if (absPerp < labelPerpMin || absPerp > labelPerpMax) continue;
 
-          const ocr = ocrDigitFromRoi(binMat, rect);
+          const ocr = ocrDigitFromRoi(binMat, rect, ocrRotateCode);
           if (!ocr) continue;
 
           rawGlyphs.push({
@@ -1725,14 +1866,7 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
   const numberAnchors = inferNumberAnchorsFromGlyphs(filteredGlyphs);
   const ocrStart = estimateOcrStart(numberAnchors, spanForGrid, lengthMm, s, len);
 
-  if (sourceMeta && sourceMeta.filename && (
-    sourceMeta.filename.includes("1.pdf") || 
-    sourceMeta.filename.includes("10.pdf") || 
-    sourceMeta.filename.includes("13.pdf") || 
-    sourceMeta.filename.includes("6.pdf") || 
-    sourceMeta.filename.includes("7.pdf") || 
-    sourceMeta.debugOCR
-  )) {
+  if (sourceMeta && sourceMeta.filename) {
     console.log(`\n[DEBUG FILENAME: ${sourceMeta.filename}]`);
     console.log(`- lengthMm: ${lengthMm}`);
     console.log(`- spanForGrid: ${spanForGrid}`);
@@ -1750,7 +1884,7 @@ function snapCandidateEndpoints(mat, candidate, expectedSpan, sourceMeta) {
     ? (ocrStart.shouldFlip ? len - ocrStart.start : ocrStart.start + spanForGrid)
     : e;
 
-  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, !!ocrStart, sourceMeta ? sourceMeta.filename : '');
+  const grid = fitMajorTickGrid(tickClusters, labelClusters, spanForGrid, lengthMm, seedStart, seedEnd, !!ocrStart, sourceMeta ? sourceMeta.filename : '', s, e);
   let snapMode = 'endpoint-snap+ocr-scan';
   if (grid) {
     s = grid.start;
@@ -1893,6 +2027,7 @@ function detect(mat, sourceMeta, rulerLengthMm) {
         p12: refined.p12,
         method: refined.method,
         reliable: refined.reliable || matchCount >= 2,
+        baseScore: refined.score,
         score: refined.score + (matchCount * 500),
         detectedLengthMm: refined.detectedLengthMm,
         ocrDigits: refined.ocrDigits,
@@ -1907,39 +2042,40 @@ function detect(mat, sourceMeta, rulerLengthMm) {
 
     refinedCandidates.sort((a, b) => {
       // 1. If one candidate has a massively higher base score (e.g. > 200 diff), it wins regardless of OCR noise
-      if (Math.abs(a.score - b.score) > 200) {
-        return b.score - a.score;
+      if (Math.abs(a.baseScore - b.baseScore) > 200) {
+        return b.baseScore - a.baseScore;
       }
 
-      // 2. Prefer candidate with more OCR matched digits (if >= 2)
-      const aMatches = a.matchCount >= 2 ? a.matchCount : 0;
-      const bMatches = b.matchCount >= 2 ? b.matchCount : 0;
-      if (aMatches !== bMatches) {
-        return bMatches - aMatches;
-      }
-
-      // 3. Prioritize reliable candidates
+      // 2. Prioritize reliable candidates — reliability must come before length hint
+      //    to avoid unreliable candidates winning just because they match the hint.
       if (a.reliable && !b.reliable) return -1;
       if (!a.reliable && b.reliable) return 1;
-      
-      // 3. Prefer Tick-Cluster method over line fallback
-      const aIsTick = a.method.includes("Tick-Cluster");
-      const bIsTick = b.method.includes("Tick-Cluster");
-      if (aIsTick && !bIsTick) return -1;
-      if (!aIsTick && bIsTick) return 1;
 
-      // 4. Prefer the expected length hint
+      // 3. Prefer the expected length hint (only meaningful within same reliability tier)
       const aMatchesHint = (a.detectedLengthMm === rulerLengthMm);
       const bMatchesHint = (b.detectedLengthMm === rulerLengthMm);
       if (aMatchesHint && !bMatchesHint) return -1;
       if (!aMatchesHint && bMatchesHint) return 1;
 
-      // 5. Prefer band candidates (since they are cleaner crops)
+      // 4. Prefer candidate with more OCR matched digits (if >= 2)
+      const aMatches = a.matchCount >= 2 ? a.matchCount : 0;
+      const bMatches = b.matchCount >= 2 ? b.matchCount : 0;
+      if (aMatches !== bMatches) {
+        return bMatches - aMatches;
+      }
+      
+      // 5. Prefer Tick-Cluster method over line fallback
+      const aIsTick = a.method.includes("Tick-Cluster");
+      const bIsTick = b.method.includes("Tick-Cluster");
+      if (aIsTick && !bIsTick) return -1;
+      if (!aIsTick && bIsTick) return 1;
+
+      // 6. Prefer band candidates (since they are cleaner crops)
       if (a.isBand !== b.isBand) {
         return a.isBand ? -1 : 1;
       }
 
-      // 6. Higher score as final tie-breaker
+      // 7. Higher score as final tie-breaker
       return b.score - a.score;
     });
 

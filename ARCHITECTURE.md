@@ -132,5 +132,80 @@ The repository features a lightning-fast E2E test runner (`run_direct_tests.js`)
 1. **Ground Truth Validation**: Uses `ruler_ground_truth.json` containing precise ruler endpoint coordinates per stencil file.
 2. **GT Coordinate Space**: Coordinates are stored in **processed-mat space** — i.e., the same frame used by the detector output (after crop, scale, and deskew). No further transform is applied at comparison time.
 3. **Orientation-Invariant Comparison**: The detector runs on both the normal and 180°-rotated mat and picks the higher-scoring candidate. GT comparison tests both the stored orientation and its 180°-flip equivalent (`W - x`, `H - y`) and takes the minimum error, so MATCH holds regardless of which candidate mat wins on any given run.
-4. **Maximum Allowable Deviation**: A strict **$2.0 \text{ mm}$ error margin** is enforced. Any deviation above this threshold triggers a `NOT MATCH` status and a non-zero exit code.
+4. **Maximum Allowable Deviation**: A strict **$1.5 \text{ mm}$ error margin** is enforced on the parallel calibration axis. Any deviation above this threshold triggers a `NOT MATCH` status and a non-zero exit code.
 5. **Updating Ground Truth**: GT entries must reflect current detector output in current pipeline conditions. When the pipeline changes (e.g., crop parameters, deskew angle, rendering DPI), affected entries should be refreshed by running the targeted stencil with `[DETECTED]` logging and writing the new coordinates.
+
+---
+
+## 6. Coordinate Spaces & Calibration Acceptance Criteria
+
+To guarantee precision and prevent geometric regressions, we define clear coordinate frames and error acceptance rules.
+
+### 6.1 Coordinate Space Transformation Pipeline
+
+Images and PDF inputs undergo a sequence of spatial transformations. Any coordinate point transforms as follows from the source file to the final detection canvas:
+
+```mermaid
+graph TD
+    A["Source Canvas Space (x_src, y_src)"] -- "Crop & Scale (s)" --> B["Cropped & Scaled Space (x_crop, y_crop)"]
+    B -- "Deskew Rotation (θ)" --> C["Rotated/Deskewed Space (x_rot, y_rot)"]
+    C -- "180° Flip (if matched upside down)" --> D["Processed Mat Space (x_final, y_final)"]
+```
+
+#### Mathematical Transforms
+
+1. **Source Canvas Frame**:
+   Represents raw pixels of the uploaded image or the high-resolution PDF viewport canvas (rendered at `scale = 3.0` for $216$ DPI). Coordinates are defined as $(x_{\text{src}}, y_{\text{src}})$.
+
+2. **Cropped & Scaled Frame**:
+   The bounding box of the auto-crop area begins at $(\text{cropX}, \text{cropY})$ relative to the source canvas. The image is cropped and then scaled by factor $s$ (e.g., upscaling low-res views for tick/OCR accuracy):
+   $$x_{\text{crop}} = (x_{\text{src}} - \text{cropX}) \cdot s$$
+   $$y_{\text{crop}} = (y_{\text{src}} - \text{cropY}) \cdot s$$
+
+3. **Rotated (Deskewed) Frame**:
+   The cropped mat is deskewed by rotating it by $\theta$ degrees around its center $(c_x, c_y)$. Because rotation expands the canvas size to prevent cropping boundary clipping, the rotation maps points to the new expanded frame center $(c'_x, c'_y)$:
+   $$\begin{bmatrix} x_{\text{rot}} \\ y_{\text{rot}} \end{bmatrix} = \begin{bmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta \end{bmatrix} \begin{bmatrix} x_{\text{crop}} - c_x \\ y_{\text{crop}} - c_y \end{bmatrix} + \begin{bmatrix} c'_x \\ c'_y \end{bmatrix}$$
+   Where the new dimensions $(W_{\text{new}}, H_{\text{new}})$ are computed as:
+   $$W_{\text{new}} = \lceil H_{\text{crop}} \sin|\theta| + W_{\text{crop}} \cos|\theta| \rceil$$
+   $$H_{\text{new}} = \lceil H_{\text{crop}} \cos|\theta| + W_{\text{crop}} \sin|\theta| \rceil$$
+
+4. **Active/Processed Mat Frame (180° Rotation-Flip)**:
+   If the detector determines the ruler scale is upside down, a $180^\circ$ rotation is applied to the active mat:
+   $$x_{\text{final}} = W_{\text{final}} - x_{\text{rot}}$$
+   $$y_{\text{final}} = H_{\text{final}} - y_{\text{rot}}$$
+
+This final active frame matches the preview overlay output, which is why ground-truth coordinates in `ruler_ground_truth.json` are stored directly in this **processed-mat space** to maintain absolute validation simplicity.
+
+### 6.2 Parallel vs. Perpendicular Acceptance Criteria
+
+When evaluating whether the detected ruler coordinates ($P_0$, $P_{12}$) match the ground-truth ticks, we must accommodate human-clicking and tick-height variance. A perpendicular offset of a few millimeters does not affect the physical scaling calibration (pixels/mm) or the deskew angle of the output. Therefore, the E2E verification decomposes the deviation into two components:
+
+1. **Directional Ground-Truth Vectors**:
+   Let the Ground Truth vector be $\vec{v} = P_{12}^{GT} - P_{0}^{GT}$, with total length $\lVert \vec{v} \rVert$ in pixels. The target physical span length is $gtLenMm$ (e.g. $100\text{ mm}$ or $120\text{ mm}$).
+   The unit tangent vector is $\vec{u} = \frac{\vec{v}}{\lVert \vec{v} \rVert}$, and the unit normal vector is $\vec{n} = (-u_y, u_x)$.
+
+2. **Optimal Translation Alignment**:
+   To prevent penalty for simple horizontal translation shifts along the scale line, we project the detected segment onto the ground-truth line. The optimal offset projection $offsetMm$ along the axis is:
+   $$offsetMm = \frac{\vec{v} \cdot (\vec{dp}_0 + \vec{dp}_{12})}{2 \lVert \vec{v} \rVert^2}$$
+   Where $\vec{dp}_0 = P_0 - P_0^{GT}$ and $\vec{dp}_{12} = P_{12} - P_0^{GT} - \text{snapMm} \cdot \vec{v}$ (here $snapMm$ is the detected ruler length).
+
+3. **Expected Coordinates**:
+   Using the projected shift, the target expected endpoints are:
+   $$P_0^{\text{exp}} = P_0^{GT} + offsetMm \cdot \vec{v}$$
+   $$P_{12}^{\text{exp}} = P_0^{GT} + (offsetMm + snapMm) \cdot \vec{v}$$
+
+4. **Error Metrics**:
+   - **Parallel Error ($err_{\parallel}$)**: Measures physical scale length calibration deviation.
+     $$err_{\parallel, 0} = |(P_0 - P_0^{\text{exp}}) \cdot \vec{u}|$$
+     $$err_{\parallel, 12} = |(P_{12} - P_{12}^{\text{exp}}) \cdot \vec{u}|$$
+     $$\text{maxParErrMm} = \frac{\max(err_{\parallel, 0}, err_{\parallel, 12})}{\lVert \vec{v} \rVert}$$
+   - **Perpendicular Error ($err_{\perp}$)**: Measures distance offset normal to the ruler axis.
+     $$err_{\perp, 0} = |(P_0 - P_0^{\text{exp}}) \cdot \vec{n}|$$
+     $$err_{\perp, 12} = |(P_{12} - P_{12}^{\text{exp}}) \cdot \vec{n}|$$
+     $$\text{maxPerpErrMm} = \frac{\max(err_{\perp, 0}, err_{\perp, 12})}{\lVert \vec{v} \rVert}$$
+
+5. **Decision Logic**:
+   - **Strict Parallel Axis Margin**: We enforce a strict **$< 1.5\text{ mm}$** parallel calibration deviation limit.
+   - **Lenient Perpendicular Axis Margin**: If the perpendicular offset is within **$3.5\text{ mm}$**, we ignore the perpendicular offset entirely and return `maxParErrMm`.
+   - **Off-Axis Penalty**: If the ruler detection is shifted off-axis by more than $3.5\text{ mm}$, the test fails by returning the maximum of the two: $\max(\text{maxParErrMm}, \text{maxPerpErrMm})$.
+

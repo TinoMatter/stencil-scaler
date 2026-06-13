@@ -72,7 +72,7 @@ function detectExpectedRulerLengthFromFilename(filename) {
   const match = lower.match(/(?:^|\D)(\d+)(?:\.[^.]+)?$/) || lower.match(/(\d+)/);
   if (match) {
     const num = parseInt(match[1], 10);
-    if ([1, 2, 3, 4, 5, 16].includes(num)) {
+    if ([1, 2, 3, 4, 5, 6, 16].includes(num)) {
       return 10;
     }
   }
