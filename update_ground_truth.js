@@ -8,8 +8,35 @@ global.HTMLImageElement = Image;
 global.HTMLCanvasElement = createCanvas(0, 0).constructor;
 global.OffscreenCanvas = createCanvas(0, 0).constructor;
 global.ImageData = ImageData;
-global.document = { createElement: tag => tag === 'canvas' ? createCanvas(0, 0) : null };
-global.window = { requestAnimationFrame: (cb) => setImmediate(cb) };
+global.document = {
+  createElement: (tag) => {
+    if (tag === 'canvas') return createCanvas(1, 1);
+    if (tag === 'img') return new Image();
+    return {};
+  }
+};
+global.window = {
+  requestAnimationFrame: (cb) => setTimeout(cb, 0),
+  cancelAnimationFrame: (id) => clearTimeout(id)
+};
+
+class NodeCanvasFactory {
+  create(width, height) {
+    const canvas = createCanvas(width, height);
+    const context = canvas.getContext("2d");
+    return { canvas, context };
+  }
+  reset(canvasAndContext, width, height) {
+    canvasAndContext.canvas.width = width;
+    canvasAndContext.canvas.height = height;
+  }
+  destroy(canvasAndContext) {
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
 
 const cv = require('./offline_package/vendor/opencv.js');
 global.cv = cv;
@@ -20,21 +47,12 @@ const RulerDetector = require('./js/ruler-detector.js');
 const STENCILS_DIR = './01_Schablonen_Vorlagen_für_Tests';
 const GT_FILE = './ruler_ground_truth.json';
 
-const files_to_update = [
-  '08.04.2026 Vorname Nachname 12.pdf',
-  '15.05.2026 Vorname Nachname 8.pdf',
-  '15.05.2026 Vorname Nachname 3.pdf',
-  '15.05.2026 Vorname Nachname 1_a4_1zu1.pdf',
-  '11.03.2026 Vorname Nachname 16.pdf'
-];
-
 let groundTruth = JSON.parse(fs.readFileSync(GT_FILE, 'utf8'));
-const updates = {};
 
 cv.onRuntimeInitialized = async () => {
   const { prepareImageForDetection } = require('./js/gui_pipeline.js');
   
-  for (const filename of files_to_update) {
+  for (const filename of Object.keys(groundTruth)) {
     const filepath = path.join(STENCILS_DIR, filename);
     if (!fs.existsSync(filepath)) {
       console.log(`⚠️  File not found: ${filepath}`);
@@ -48,9 +66,13 @@ cv.onRuntimeInitialized = async () => {
       if (filename.endsWith('.pdf')) {
         const pdfData = fs.readFileSync(filepath);
         const PDFDocument = require('pdfjs-dist/legacy/build/pdf');
-        const pdf = await PDFDocument.getDocument({ data: new Uint8Array(pdfData) }).promise;
+        const pdf = await PDFDocument.getDocument({
+          data: new Uint8Array(pdfData),
+          canvasFactory: new NodeCanvasFactory(),
+          disableFontFace: true
+        }).promise;
         const page = await pdf.getPage(1);
-        const vp = page.getViewport({ scale: 2 });
+        const vp = page.getViewport({ scale: 3.0 });
         sourceCanvas = createCanvas(vp.width, vp.height);
         const ctx = sourceCanvas.getContext('2d');
         await page.render({ canvasContext: ctx, viewport: vp }).promise;
@@ -61,16 +83,43 @@ cv.onRuntimeInitialized = async () => {
         ctx.drawImage(img, 0, 0);
       }
       
+      // Setup meta object
+      let meta = { filename };
+      if (filename.endsWith('.pdf')) {
+        meta.isPdf = true;
+        meta.pageIndex = 1;
+        meta.pageBreitePt = sourceCanvas.width / 3;
+        meta.pageHöhePt = sourceCanvas.height / 3;
+        meta.renderScale = 3.0;
+        meta.sourceWidthPx = sourceCanvas.width;
+        meta.sourceHeightPx = sourceCanvas.height;
+      }
+      
       // Prepare image (deskew, etc.)
-      const result = await prepareImageForDetection(sourceCanvas, {});
+      const result = await prepareImageForDetection(sourceCanvas, meta);
       
       // Detect ruler
-      const detector = new RulerDetector();
-      const rulers = detector.detectAllRulers(result.baseMat);
+      function detectExpectedRulerLengthFromFilename(fname) {
+        if (!fname) return 120;
+        const lower = fname.toLowerCase();
+        if (lower.includes("publicare") || lower.includes("0-10") || lower.includes("spontantest") || lower.includes("spontan_test")) {
+          return 100;
+        }
+        const match = lower.match(/(?:^|\D)(\d+)(?:\.[^.]+)?$/) || lower.match(/(\d+)/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if ([1, 2, 3, 4, 5, 6, 16].includes(num)) {
+            return 100;
+          }
+        }
+        return 120;
+      }
       
-      if (rulers.length > 0) {
-        const ruler = rulers[0];
-        updates[filename] = {
+      const rulerMm = detectExpectedRulerLengthFromFilename(filename);
+      const ruler = RulerDetector.detect(result.baseMat, meta, rulerMm);
+      
+      if (ruler) {
+        groundTruth[filename] = {
           p0: { x: Math.round(ruler.p0.x * 100) / 100, y: Math.round(ruler.p0.y * 100) / 100 },
           p12: { x: Math.round(ruler.p12.x * 100) / 100, y: Math.round(ruler.p12.y * 100) / 100 },
           rulerLengthMm: ruler.detectedLengthMm
@@ -84,8 +133,8 @@ cv.onRuntimeInitialized = async () => {
     }
   }
   
-  // Print detected rulers in JSON format for easy copy
-  console.log('\n=== Detected Rulers ===');
-  console.log(JSON.stringify(updates, null, 2));
+  // Write the updated ground truth back to the file
+  fs.writeFileSync(GT_FILE, JSON.stringify(groundTruth, null, 2), 'utf8');
+  console.log('\n=== Ground Truth Database Updated ===');
   process.exit(0);
 };
