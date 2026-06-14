@@ -901,61 +901,59 @@ function nearestClusterDist(clusters, target, maxDist) {
 }
 
 let DIGIT_TEMPLATES = null;
-
-function ensureDigitTemplates() {
-  if (DIGIT_TEMPLATES) return DIGIT_TEMPLATES;
-  const templates = [];
-  for (let d = 0; d <= 9; d += 1) {
-    const m = new cv.Mat(44, 28, cv.CV_8UC1, new cv.Scalar(0));
-    const text = String(d);
-    cv.putText(m, text, new cv.Point(3, 35), cv.FONT_HERSHEY_SIMPLEX, 1.2, new cv.Scalar(255), 5, cv.LINE_AA);
-    cv.threshold(m, m, 120, 255, cv.THRESH_BINARY);
-    const copy = new Uint8Array(m.data.length);
-    copy.set(m.data);
-    templates.push({ digit: d, data: copy, w: m.cols, h: m.rows });
-    m.delete();
-  }
-  DIGIT_TEMPLATES = templates;
-  return DIGIT_TEMPLATES;
-}
-
 let BASE_DIGIT_MATS = null;
+
 function ensureBaseDigitMats() {
   if (BASE_DIGIT_MATS) return BASE_DIGIT_MATS;
+  
+  const font = {
+    0: [0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0x66, 0x3C],
+    1: [0x18, 0x38, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x7E],
+    2: [0x3C, 0x66, 0xC3, 0x03, 0x06, 0x0C, 0x18, 0x30, 0x60, 0xC0, 0xC3, 0xFF],
+    3: [0xFF, 0xC3, 0x06, 0x0C, 0x18, 0x3C, 0x03, 0x03, 0xC3, 0xC3, 0x66, 0x3C],
+    4: [0x06, 0x0E, 0x1E, 0x36, 0x66, 0xC6, 0xFF, 0x06, 0x06, 0x06, 0x06, 0x06],
+    5: [0xFF, 0xC0, 0xC0, 0xC0, 0xFC, 0xC6, 0x03, 0x03, 0x03, 0xC3, 0x66, 0x3C],
+    6: [0x3C, 0x66, 0xC0, 0xC0, 0xFC, 0xC6, 0xC3, 0xC3, 0xC3, 0xC3, 0x66, 0x3C],
+    7: [0xFF, 0xC3, 0x06, 0x06, 0x0C, 0x0C, 0x18, 0x18, 0x30, 0x30, 0x30, 0x30],
+    8: [0x3C, 0x66, 0xC3, 0xC3, 0x66, 0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0x66, 0x3C],
+    9: [0x3C, 0x66, 0xC3, 0xC3, 0xC3, 0x67, 0x3F, 0x03, 0x03, 0xC3, 0x66, 0x3C]
+  };
+
   const templates = [];
   for (let d = 0; d <= 9; d++) {
-    const rawTpl = new cv.Mat(80, 80, cv.CV_8UC1, new cv.Scalar(0));
-    cv.putText(rawTpl, String(d), new cv.Point(15, 60), cv.FONT_HERSHEY_SIMPLEX, 1.8, new cv.Scalar(255), 5, cv.LINE_AA);
-    cv.threshold(rawTpl, rawTpl, 120, 255, cv.THRESH_BINARY);
-
-    const tplContours = new cv.MatVector();
-    const tplHierarchy = new cv.Mat();
-    cv.findContours(rawTpl, tplContours, tplHierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
-    let tplMat = null;
-    if (tplContours.size() > 0) {
-      let minX = 80, minY = 80, maxX = 0, maxY = 0;
-      for (let j = 0; j < tplContours.size(); j++) {
-        const c = tplContours.get(j);
-        const r = cv.boundingRect(c);
-        if (r.x < minX) minX = r.x;
-        if (r.y < minY) minY = r.y;
-        if (r.x + r.width > maxX) maxX = r.x + r.width;
-        if (r.y + r.height > maxY) maxY = r.y + r.height;
+    const tplMat = new cv.Mat(12, 8, cv.CV_8UC1, new cv.Scalar(0));
+    const data = tplMat.data;
+    const rows = font[d];
+    for (let y = 0; y < 12; y++) {
+      const rowVal = rows[y];
+      for (let x = 0; x < 8; x++) {
+        if (rowVal & (1 << (7 - x))) {
+          data[y * 8 + x] = 255;
+        }
       }
-      const tplRect = new cv.Rect(minX, minY, maxX - minX, maxY - minY);
-      tplMat = rawTpl.roi(tplRect).clone();
-    } else {
-      tplMat = new cv.Mat(24, 16, cv.CV_8UC1, new cv.Scalar(0));
     }
-    tplContours.delete();
-    tplHierarchy.delete();
-    rawTpl.delete();
-
     templates.push({ digit: d, mat: tplMat });
   }
   BASE_DIGIT_MATS = templates;
   return BASE_DIGIT_MATS;
+}
+
+function ensureDigitTemplates() {
+  if (DIGIT_TEMPLATES) return DIGIT_TEMPLATES;
+  
+  const base = ensureBaseDigitMats();
+  const templates = [];
+  for (const t of base) {
+    const resized = new cv.Mat();
+    cv.resize(t.mat, resized, new cv.Size(28, 44), 0, 0, cv.INTER_LINEAR);
+    cv.threshold(resized, resized, 120, 255, cv.THRESH_BINARY);
+    const copy = new Uint8Array(resized.data.length);
+    copy.set(resized.data);
+    templates.push({ digit: t.digit, data: copy, w: resized.cols, h: resized.rows });
+    resized.delete();
+  }
+  DIGIT_TEMPLATES = templates;
+  return DIGIT_TEMPLATES;
 }
 
 function getScaledTemplates(pxPerMm, heightRatio = 1.8, rotateCode = null) {

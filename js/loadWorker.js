@@ -36,7 +36,7 @@ self.onmessage = async (e) => {
       const page = await doc.getPage(1);
       const scale = 3.0; // Render scale matching test suite for high accuracy
       const viewport = page.getViewport({ scale });
-      offscreen = new OffscreenCanvas(viewport.width, viewport.height);
+      offscreen = new OffscreenCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
       const ctx = offscreen.getContext('2d');
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, offscreen.width, offscreen.height);
@@ -51,8 +51,8 @@ self.onmessage = async (e) => {
         pageBreitePt,
         pageHöhePt,
         renderScale: scale,
-        sourceWidthPx: viewport.width,
-        sourceHeightPx: viewport.height,
+        sourceWidthPx: Math.ceil(viewport.width),
+        sourceHeightPx: Math.ceil(viewport.height),
       };
     } else {
       const blob = new Blob([arrayBuffer], { type: fileType });

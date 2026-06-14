@@ -1,9 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const http = require('http');
 const puppeteer = require('puppeteer');
-
-const PORT = 8080;
 const DIR = __dirname;
 const STENCILS_DIR = path.join(DIR, '01_Schablonen_Vorlagen_für_Tests');
 const OUTPUT_DIR = path.join(DIR, 'test_outputs', 'browser_preview');
@@ -12,44 +9,10 @@ if (!fs.existsSync(OUTPUT_DIR)) {
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 }
 
-// 1. Simple HTTP Server
-const server = http.createServer((req, res) => {
-  let filePath = path.join(DIR, req.url === '/' ? 'index.html' : req.url);
-  
-  // Basic query string stripping
-  filePath = filePath.split('?')[0];
-
-  const extname = path.extname(filePath);
-  let contentType = 'text/html';
-  switch (extname) {
-    case '.js': contentType = 'text/javascript'; break;
-    case '.css': contentType = 'text/css'; break;
-    case '.json': contentType = 'application/json'; break;
-    case '.png': contentType = 'image/png'; break;
-    case '.jpg': contentType = 'image/jpg'; break;
-    case '.pdf': contentType = 'application/pdf'; break;
-  }
-
-  fs.readFile(filePath, (err, content) => {
-    if (err) {
-      if(err.code == 'ENOENT'){
-        res.writeHead(404);
-        res.end('Not found');
-      } else {
-        res.writeHead(500);
-        res.end('Server error');
-      }
-    } else {
-      res.writeHead(200, { 'Content-Type': contentType });
-      res.end(content, 'utf-8');
-    }
-  });
-});
-
-server.listen(PORT, async () => {
-  console.log(`Server running at http://localhost:${PORT}/`);
+async function start() {
   await runTests();
-});
+}
+start().catch(console.error);
 
 function computeAlignmentError(pt0, pt12, sMm, gtPt0, gtPt12, gtLenMm) {
   const vx = (gtPt12.x - gtPt0.x) / gtLenMm;
@@ -85,26 +48,38 @@ function computeAlignmentError(pt0, pt12, sMm, gtPt0, gtPt12, gtLenMm) {
   const maxParErrMm = Math.max(err0_par, err12_par) / vLen;
   const maxPerpErrMm = Math.max(err0_perp, err12_perp) / vLen;
 
+  console.log(`[DEBUG COMPUTE] gtLenMm=${gtLenMm} maxPar=${maxParErrMm.toFixed(3)} maxPerp=${maxPerpErrMm.toFixed(3)} offset=${offsetMm.toFixed(3)}`);
+
   if (Math.abs(offsetMm) > 2.0) {
-    return Math.max(maxParErrMm, maxPerpErrMm, Math.abs(offsetMm));
+    const r = Math.max(maxParErrMm, maxPerpErrMm, Math.abs(offsetMm));
+    console.log(`[RETURN] offset > 2.0, returning ${r}`);
+    return r;
   }
 
   if (maxPerpErrMm <= 3.5) {
-    return maxParErrMm;
+    const r = maxParErrMm;
+    console.log(`[RETURN] perp <= 3.5, returning ${r}`);
+    return r;
   }
-  return Math.max(maxParErrMm, maxPerpErrMm);
+  const r = Math.max(maxParErrMm, maxPerpErrMm);
+  console.log(`[RETURN] default, returning ${r}`);
+  return r;
 }
 
 async function runTests() {
   const browser = await puppeteer.launch({
-    headless: "new",
-    defaultViewport: { width: 1280, height: 1024 }
+    headless: "shell",
+    pipe: true,
+    userDataDir: path.join(DIR, '.puppeteer_tmp'),
+    defaultViewport: { width: 1280, height: 1024 },
+    args: ['--allow-file-access-from-files', '--disable-web-security', '--single-process']
   });
   
   const page = await browser.newPage();
   
   // Forward browser console to terminal for debugging
   page.on('console', msg => console.log('[Browser]', msg.text()));
+  page.on('pageerror', err => console.error('[Browser Error]', err.toString()));
 
   let groundTruth = {};
   try {
@@ -139,7 +114,8 @@ async function runTests() {
 
   for (const file of files) {
     console.log(`\nTesting: ${file}`);
-    await page.goto(`http://localhost:${PORT}/index.html`, { waitUntil: 'networkidle0' });
+    const htmlPath = path.resolve(__dirname, 'index.html');
+    await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle0' });
 
     // Ensure CV is ready
     await page.waitForFunction(() => window.appState && window.appState.cvReady === true, { timeout: 10000 });
@@ -168,6 +144,7 @@ async function runTests() {
         const H = window.appState.processedCanvas ? window.appState.processedCanvas.height : 0;
         return { p0, p12, snapMm, reliable, W, H };
       });
+      console.log(`  -> Detected: p0=(${appData.p0.x.toFixed(2)},${appData.p0.y.toFixed(2)}), p12=(${appData.p12.x.toFixed(2)},${appData.p12.y.toFixed(2)}), W=${appData.W}, H=${appData.H}, snap=${appData.snapMm}`);
 
       // Validation
       const gt = groundTruth[file];
@@ -178,12 +155,14 @@ async function runTests() {
       
       const gtP0f  = { x: appData.W - gt.p0.x,  y: appData.H - gt.p0.y  };
       const gtP12f = { x: appData.W - gt.p12.x, y: appData.H - gt.p12.y };
+      console.log(`[DEBUG GT] gtP0f=(${gtP0f.x.toFixed(2)},${gtP0f.y.toFixed(2)}) gtP12f=(${gtP12f.x.toFixed(2)},${gtP12f.y.toFixed(2)})`);
 
       const e1 = computeAlignmentError(appData.p0, appData.p12, appData.snapMm, gt.p0, gt.p12, gtLengthMm);
       const e2 = computeAlignmentError(appData.p0, appData.p12, appData.snapMm, gt.p12, gt.p0, gtLengthMm);
       const e3 = computeAlignmentError(appData.p0, appData.p12, appData.snapMm, gtP0f, gtP12f, gtLengthMm);
       const e4 = computeAlignmentError(appData.p0, appData.p12, appData.snapMm, gtP12f, gtP0f, gtLengthMm);
       const maxErrMm = Math.min(e1, e2, e3, e4);
+      console.log(`  -> maxErrMm=${maxErrMm} e1=${e1} e2=${e2} e3=${e3} e4=${e4}`);
 
       let allowedTolerance = 1.5;
       let status = "MATCH";
@@ -208,7 +187,6 @@ async function runTests() {
   }
 
   await browser.close();
-  server.close();
 
   if (allPassed) {
     console.log("\nAll E2E Browser tests passed! ✅");

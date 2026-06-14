@@ -20,9 +20,9 @@ function deskew(src) {
 
   try {
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-    cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
+    cv.threshold(gray, gray, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
     cv.Canny(gray, edges, 50, 150, 3, false);
-    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 80, src.cols * 0.25, 20);
+    cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 50, src.cols * 0.1, 15);
 
     const winkel = [];
     for (let i = 0; i < lines.rows; i += 1) {
@@ -31,7 +31,7 @@ function deskew(src) {
       const x2 = lines.data32S[i * 4 + 2];
       const y2 = lines.data32S[i * 4 + 3];
       const len = Math.hypot(x2 - x1, y2 - y1);
-      if (len < src.cols * 0.2) continue;
+      if (len < src.cols * 0.1) continue;
 
       let deg = Math.atan2(y2 - y1, x2 - x1) * 180 / Math.PI;
       if (deg > 90) deg -= 180;
@@ -103,6 +103,14 @@ async function cropAndScaleStencilIfPossible(canvas) {
     cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
     cv.threshold(gray, thresh, 0, 255, cv.THRESH_BINARY_INV + cv.THRESH_OTSU);
 
+    // Clear outer 5% margins to remove scan borders/noise
+    const marginX = Math.round(canvas.width * 0.05);
+    const marginY = Math.round(canvas.height * 0.05);
+    cv.rectangle(thresh, new cv.Point(0, 0), new cv.Point(canvas.width, marginY), new cv.Scalar(0), -1);
+    cv.rectangle(thresh, new cv.Point(0, canvas.height - marginY), new cv.Point(canvas.width, canvas.height), new cv.Scalar(0), -1);
+    cv.rectangle(thresh, new cv.Point(0, 0), new cv.Point(marginX, canvas.height), new cv.Scalar(0), -1);
+    cv.rectangle(thresh, new cv.Point(canvas.width - marginX, 0), new cv.Point(canvas.width, canvas.height), new cv.Scalar(0), -1);
+
     cv.findContours(thresh, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
     let maxArea = 0;
@@ -132,25 +140,25 @@ async function cropAndScaleStencilIfPossible(canvas) {
       const cropH = y1 - y0;
 
       if (cropW > 100 && cropH > 100) {
-        const croppedCanvas = document.createElement("canvas");
-        croppedCanvas.width = cropW;
-        croppedCanvas.height = cropH;
-        const ctx = croppedCanvas.getContext("2d");
-        ctx.drawImage(canvas, x0, y0, cropW, cropH, 0, 0, cropW, cropH);
-
+        let cropped = src.roi(new cv.Rect(x0, y0, cropW, cropH));
         const targetW = 2000;
+        let activeMat = cropped;
+        let scale = 1;
+
         if (cropW < targetW) {
-          const scale = targetW / cropW;
-          const scaledCanvas = document.createElement("canvas");
-          scaledCanvas.width = targetW;
-          scaledCanvas.height = Math.round(cropH * scale);
-          const sCtx = scaledCanvas.getContext("2d");
-          sCtx.imageSmoothingEnabled = true;
-          sCtx.imageSmoothingQuality = "high";
-          sCtx.drawImage(croppedCanvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
-          return { canvas: scaledCanvas, x: x0, y: y0, scale };
+          scale = targetW / cropW;
+          activeMat = new cv.Mat();
+          cv.resize(cropped, activeMat, new cv.Size(targetW, Math.round(cropH * scale)), 0, 0, cv.INTER_LINEAR);
+          cropped.delete();
         }
-        return { canvas: croppedCanvas, x: x0, y: y0, scale: 1 };
+
+        const croppedCanvas = document.createElement("canvas");
+        croppedCanvas.width = activeMat.cols;
+        croppedCanvas.height = activeMat.rows;
+        cv.imshow(croppedCanvas, activeMat);
+        activeMat.delete();
+
+        return { canvas: croppedCanvas, x: x0, y: y0, scale };
       }
     }
   } catch (err) {

@@ -481,10 +481,7 @@ async function runAllTests() {
       };
 
       tryDetect(baseMat, "");
-      const baseCandidate = candidates.find(c => c.detection && c.detection.reliable && c.detection.ocrDigits && c.detection.ocrDigits.filter(d => d.matched).length >= 3);
-      if (!baseCandidate) {
-        tryDetect(flippedMat, "[rot180] ");
-      }
+      tryDetect(flippedMat, "[rot180] ");
 
       let chosen = null;
       if (candidates.length > 0) {
@@ -606,6 +603,10 @@ async function runAllTests() {
           const maxParErrMm = Math.max(err0_par, err12_par) / vLen;
           const maxPerpErrMm = Math.max(err0_perp, err12_perp) / vLen;
 
+          if (file.includes('4.pdf')) {
+            console.log(`[DIRECT COMPUTE] gtLenMm=${gtLenMm} maxPar=${maxParErrMm.toFixed(3)} maxPerp=${maxPerpErrMm.toFixed(3)} offset=${offsetMm.toFixed(3)}`);
+          }
+
           if (Math.abs(offsetMm) > 2.0) {
             return Math.max(maxParErrMm, maxPerpErrMm, Math.abs(offsetMm));
           }
@@ -616,11 +617,20 @@ async function runAllTests() {
           return Math.max(maxParErrMm, maxPerpErrMm);
         }
 
+        if (file.includes('4.pdf')) {
+          console.log(`[DIRECT DEBUG 4.pdf] p0=(${p0.x.toFixed(2)},${p0.y.toFixed(2)}) p12=(${p12.x.toFixed(2)},${p12.y.toFixed(2)}) W=${W} H=${H} snapMm=${snapMm} gtLengthMm=${gtLengthMm} gtP0f=(${gtP0f.x.toFixed(2)},${gtP0f.y.toFixed(2)}) gtP12f=(${gtP12f.x.toFixed(2)},${gtP12f.y.toFixed(2)})`);
+        }
+
         const e1 = computeAlignmentError(p0, p12, snapMm, gt.p0, gt.p12, gtLengthMm);
         const e2 = computeAlignmentError(p0, p12, snapMm, gt.p12, gt.p0, gtLengthMm);
         const e3 = computeAlignmentError(p0, p12, snapMm, gtP0f, gtP12f, gtLengthMm);
         const e4 = computeAlignmentError(p0, p12, snapMm, gtP12f, gtP0f, gtLengthMm);
         maxErrMm = Math.min(e1, e2, e3, e4);
+
+        if (file.includes('4.pdf')) {
+          console.log(`[DIRECT DEBUG 4.pdf errors]:`, { e1, e2, e3, e4, maxErrMm });
+        }
+
         if (file.includes('7.pdf')) {
           console.log('\n[DEBUG 7.pdf errors]:', { e1, e2, e3, e4, maxErrMm, p0, p12, gt, W, H });
         }
