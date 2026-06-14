@@ -510,6 +510,8 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
   flippedMat = prep.flippedMat;
   angleDeg = prep.angle || 0;
   sourceMeta.scale = prep.scale || 1;
+  sourceMeta.cropX = prep.cropX || 0;
+  sourceMeta.cropY = prep.cropY || 0;
 
   if (appState.abortActive) {
     if (baseMat) baseMat.delete();
@@ -597,6 +599,7 @@ async function autoDetectFromSource(sourceCanvas, sourceMeta) {
     ocrWordsMirrored: [],
     mirrored: best.label !== "",
     ocrDigits: best.detection.ocrDigits || [],
+    isFlipped: best.label !== "",
   };
 
   baseMat.delete();
@@ -636,6 +639,7 @@ async function startAutoDetection() {
       angleDeg: result.angleDeg,
       detectedLengthMm: result.detectedLengthMm,
       ocrDigits: result.ocrDigits || [],
+      isFlipped: result.isFlipped || false,
     };
 
     if (result.detectedLengthMm === 100) {
@@ -1285,6 +1289,7 @@ function updateCalibrationFromLine(methodName, lineReliable, forceLineScale) {
     imageBreiteMm,
     imageHöheMm,
     detectedLengthMm: rulerLengthMm,
+    isFlipped: appState.calibration.isFlipped || false,
   };
 
   drawCurrentPreview();

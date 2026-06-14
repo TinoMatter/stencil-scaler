@@ -321,7 +321,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       diffs.push(centers[i] - centers[i-1]);
     }
     let stepMed = median(diffs);
-    let tickStepMm = 1;
+    let isCmOnly = (centers.length < 45);
     const roughPxPerMm = expectedSpan ? (expectedSpan / rulerLengthMm) : (span / rulerLengthMm);
 
     if (expectedSpan && diffs.length > 0) {
@@ -332,29 +332,21 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
 
       if (err10 < err5 && err10 < err1) {
         stepMed = 10 * roughPxPerMm;
-        tickStepMm = 10;
+        isCmOnly = true;
       } else if (err5 < err10 && err5 < err1) {
         stepMed = 5 * roughPxPerMm;
-        tickStepMm = 5;
+        isCmOnly = true;
       } else {
         stepMed = roughPxPerMm;
-        tickStepMm = 1;
+        isCmOnly = false;
       }
-    } else if (centers.length < 45 && diffs.length > 0) {
+    } else if (isCmOnly && diffs.length > 0) {
       const minCmDiff = span / 16;
       const filteredDiffs = diffs.filter(d => d >= minCmDiff);
       if (filteredDiffs.length > 0) {
         stepMed = median(filteredDiffs);
-        // Guess if it's 5 or 10
-        const ratio = span / stepMed;
-        const err5 = Math.abs(ratio - (rulerLengthMm / 5));
-        const err10 = Math.abs(ratio - (rulerLengthMm / 10));
-        tickStepMm = (err5 < err10) ? 5 : 10;
-      } else {
-        tickStepMm = 1;
       }
     }
-    const isCmOnly = tickStepMm > 1;
 
     let bestL = rulerLengthMm;
     let bestPxPerMm = 1;
@@ -365,7 +357,19 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
 
     let pxPerMm_candidate = roughPxPerMm;
     if (stepMed > 0 && !expectedSpan) {
-      pxPerMm_candidate = stepMed / tickStepMm;
+      if (isCmOnly) {
+        // Spacing can be 5mm or 10mm
+        const ratio = span / stepMed;
+        const err5 = Math.abs(ratio - (rulerLengthMm / 5));
+        const err10 = Math.abs(ratio - (rulerLengthMm / 10));
+        if (err5 < err10) {
+          pxPerMm_candidate = stepMed / 5;
+        } else {
+          pxPerMm_candidate = stepMed / 10;
+        }
+      } else {
+        pxPerMm_candidate = stepMed;
+      }
     }
     if (!expectedSpan && (pxPerMm_candidate < 0.7 * roughPxPerMm || pxPerMm_candidate > 1.3 * roughPxPerMm)) {
       pxPerMm_candidate = roughPxPerMm;
@@ -376,9 +380,9 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
     for (const tryL of candidatesL) {
       if (pxPerMm_candidate <= 0) continue;
 
-      const stepPx = pxPerMm_candidate * tickStepMm;
-      const stepSize = tickStepMm;
-      const maxGridIdx = tryL / tickStepMm;
+      const stepPx = isCmOnly ? pxPerMm_candidate * 10 : pxPerMm_candidate;
+      const stepSize = isCmOnly ? 10 : 1;
+      const maxGridIdx = isCmOnly ? tryL / 10 : tryL;
 
       // Multi-anchor grid matching: try multiple tick centers as potential anchor points
       // instead of only centers[0] which may be a spurious noise tick
@@ -436,7 +440,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
             if (matchedIndices.size > 0) {
               const sortedIndices = [...matchedIndices].sort((a, b) => a - b);
               const spanUnits = sortedIndices[sortedIndices.length - 1] - sortedIndices[0];
-              bestMatchedSpanForL = spanUnits * tickStepMm;
+              bestMatchedSpanForL = spanUnits * (isCmOnly ? 10 : 1);
             } else {
               bestMatchedSpanForL = 0;
             }
@@ -447,9 +451,9 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       // Compare using match ratio, but respect the expected ruler length hint.
       // The expected length (from metadata) gets preference unless the alternative
       // has a significantly higher match ratio (>10% better).
-      const maxGridIdxL = tryL / tickStepMm;
+      const maxGridIdxL = isCmOnly ? tryL / 10 : tryL;
       const ratioForL = maxMatchesForL / (maxGridIdxL + 1);
-      const maxGridIdxOverall = bestL / tickStepMm;
+      const maxGridIdxOverall = isCmOnly ? bestL / 10 : bestL;
       const ratioOverall = maxMatchesOverall / (maxGridIdxOverall + 1);
 
       // Determine which length is "preferred" (matches the hint)
@@ -495,15 +499,15 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
     let end = start + bestL * bestPxPerMm;
 
     // Refine start and pxPerMm using least-squares linear regression on matched ticks
-    const stepPx = bestPxPerMm * tickStepMm;
+    const stepPx = isCmOnly ? bestPxPerMm * 10 : bestPxPerMm;
     const matchedPoints = [];
     for (let i = 0; i < centers.length; i++) {
       const dist = centers[i] - bestStart;
       const idx = Math.round(dist / stepPx);
       const gridCoord = bestStart + idx * stepPx;
       const err = Math.abs(centers[i] - gridCoord);
-      if (err <= stepPx * 0.18 && idx >= 0 && idx <= (bestL / tickStepMm)) {
-        const mmIndex = idx * tickStepMm;
+      if (err <= stepPx * 0.18 && idx >= 0 && idx <= (isCmOnly ? bestL/10 : bestL)) {
+        const mmIndex = isCmOnly ? idx * 10 : idx;
         matchedPoints.push({ mmIndex, coord: centers[i] });
       }
     }
@@ -534,7 +538,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
     }
 
     if (lineMin !== null && lineMax !== null) {
-      const kStart = tickStepMm * Math.round((centers[0] - lineMin) / (bestPxPerMm * tickStepMm));
+      const kStart = isCmOnly ? 10 * Math.round((centers[0] - lineMin) / (bestPxPerMm * 10)) : Math.round((centers[0] - lineMin) / bestPxPerMm);
       if (kStart >= 0 && kStart <= 30) {
         const baselineStart = centers[0] - kStart * bestPxPerMm;
         if (Math.abs(baselineStart - start) < bestPxPerMm * 15) {
@@ -555,7 +559,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
         const intervalCount = span / stepMed;
         const stepErr = Math.abs(stepMed - expectedStep) / Math.max(expectedStep, 1e-6);
         expectedStepBonus = Math.max(0, 1 - stepErr) * 120;
-        if (intervalCount < bestL * 0.58 / tickStepMm || intervalCount > bestL * 1.5 / tickStepMm) {
+        if (intervalCount < bestL * 0.58 / (isCmOnly ? 10 : 1) || intervalCount > bestL * 1.5 / (isCmOnly ? 10 : 1)) {
           expectedStepPlausibel = false;
         }
       }
@@ -604,7 +608,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       regular = regularCount / Math.max(diffs.length, 1);
     }
 
-    const matchRatio = maxMatchesOverall / (bestL / tickStepMm + 1);
+    const matchRatio = maxMatchesOverall / (isCmOnly ? (bestL / 10 + 1) : (bestL + 1));
     const matchRatioBonus = matchRatio * 150;
     const extraClusters = centers.length - maxMatchesOverall;
     const noisePenalty = Math.max(0, extraClusters) * 6.0;
@@ -622,7 +626,7 @@ function candidateFromTicks(ticks, orientation, cols, rows, expectedSpan, rulerL
       noisePenalty;
 
     const reliable =
-      group.length >= (tickStepMm > 1 ? 8 : 50) &&
+      group.length >= (isCmOnly ? 8 : 50) &&
       regular >= 0.15 &&
       (!expectedSpan || (spanErr <= 0.18 && stepErr <= 0.15));
 
@@ -1128,18 +1132,17 @@ function fitMajorTickGrid(tickClusters, labelClusters, spanPx, rulerLengthMm, se
     let skippedByDrift = false;
     if (Number.isFinite(seedStart)) {
       const drift = Math.abs(start - seedStart);
-      const maxAllowedDrift = hasOcr ? (majorPx * 2.5) : (majorPx * 0.8);
+      const maxAllowedDrift = hasOcr ? (majorPx * 1.5) : (mmPx * 2.5);
       if (drift > maxAllowedDrift) skippedByDrift = true;
     }
     const driftPenalty = Number.isFinite(seedStart) ? Math.abs(start - seedStart) / Math.max(majorPx, 1) : 0;
-    const finalScore = score - (hasOcr ? 0.25 : 1.2) * driftPenalty;
+    const finalScore = score - 0.25 * driftPenalty;
 
     if (filename && (
       filename.includes("6.pdf") || 
       filename.includes("7.pdf") ||
       filename.includes("1.pdf") ||
-      filename.includes("10.pdf") ||
-      filename.includes("4.pdf")
+      filename.includes("10.pdf")
     )) {
       console.log(`[DEBUG GRID CAND] len=${rulerLengthMm}, start=${start.toFixed(2)}, matches=${matches}, baseScore=${score.toFixed(2)}, driftPenalty=${driftPenalty.toFixed(2)}, finalScore=${finalScore.toFixed(2)}, skippedByDrift=${skippedByDrift}`);
     }

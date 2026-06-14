@@ -67,10 +67,32 @@ The algorithm is only evaluated against purely human-measured ground truth to pr
 ### Production Notes
 - When this tool goes into production, consider exposing an API endpoint that captures approved calibration and OCR data so you can continuously train both the deterministic detection algorithm and any downstream ML model without relying on manual uploads.
 
-### Running Direct Tests
+### Running Direct Tests vs Browser Tests
+The project includes two test suites: `run_direct_tests.js` (Node.js headless) and `run_browser_tests.js` (Puppeteer E2E).
+
+**Note for AI Agents:**
+- **Terminal Output Retrieval:** If you experience issues retrieving terminal output for long-running test commands, pipe the output to a log file and read it: `node run_browser_tests.js > test_run.log 2>&1`.
+- **Vision Limitations:** AI agents do not have vision capabilities to view the generated preview images (`.png`). You must rely on the numeric error values and status messages in the logs to evaluate algorithm performance.
+
+**When to use which:**
+- **Browser Tests (`node run_browser_tests.js`)**: This is the **Ground Truth** for algorithm improvements. It runs the exact same pipeline (PDF.js -> Web Worker -> OffscreenCanvas -> OpenCV.js) that the user experiences in the browser. Because of subtle rendering differences between Node.js `canvas` and browser `OffscreenCanvas`, the browser tests are the definitive measure of success. Always use this to validate algorithm changes.
+- **Direct Tests (`node run_direct_tests.js`)**: Use this for rapid iteration on purely mathematical changes (e.g., tweaking a threshold or scoring weight) because it runs in 1-2 seconds compared to the browser's 10-15 seconds. It is also useful for deep debugging where you need to export intermediate OpenCV Mats to the file system.
+
+**Handling Ground Truth Mismatches in Direct Previews:**
+If a stencil passes in the browser tests but fails or looks wrong in the direct test previews, **trust the browser test**. The direct tests use a Node.js `canvas` polyfill that can render fonts and anti-aliasing slightly differently, which occasionally causes OCR or edge detection to behave differently than in the real browser environment. If the browser test passes and the UI looks correct, the algorithm is working as intended.
+
+**How to verify if the Ground Truth in `ruler_ground_truth.json` is correct:**
+The coordinates in `ruler_ground_truth.json` are captured directly from the browser UI when a user manually drags the ruler endpoints to the correct positions and clicks "Save Ground Truth". 
+1. If you suspect the ground truth is wrong, open the image in the browser UI (`index.html`).
+2. Manually drag the green line to the exact 0cm and 10/12cm marks.
+3. Open the browser console and type `JSON.stringify(appState.calibration)`.
+4. Compare the `p0` and `p12` coordinates from the console with the ones in `ruler_ground_truth.json`. If they differ significantly, the JSON is wrong and should be updated with the new coordinates.
+5. **Do not rely on the direct test preview images (`test_outputs/direct_preview/`) to verify ground truth.** The direct test script attempts to reverse-map the ground truth coordinates onto the *pre-processed* (deskewed/cropped) image, and slight differences in how Node.js canvas handles the deskew rotation matrix compared to the browser can cause the visual overlay to be misaligned, even when the JSON coordinates are perfectly correct. Rely on the browser test screenshots (`test_outputs/browser_preview/`) for accurate visual confirmation.
+
 To run the E2E programmatic detection tests against the ground truth dataset:
 ```bash
-node run_direct_tests.js                  # Runs all stencils
+node run_browser_tests.js                 # Runs all stencils in browser
+node run_direct_tests.js                  # Runs all stencils in Node.js
 node run_direct_tests.js 2 3 16           # Runs select stencils by file number
 node run_direct_tests.js "Vorname 8"      # Runs matching stencils by filename substring
 ```
